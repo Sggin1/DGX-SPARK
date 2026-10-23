@@ -26,7 +26,7 @@ One topic, one place: how NVFP4 went from “barely works / burns 50–120 GB�
 - `/proc/meminfo` beats `nvidia-smi` for real pressure on GB10
 - Drop caches before tight memory experiments; treat `gpu_memory_utilization` as a deliberate knob
 
-**Do this today:** use verified launch YAMLs in [`../recipes/`](../recipes/).  
+**Do this today:** use the launch YAMLs in [`../recipes/`](../recipes/).  
 **Silicon deep dive:** [`../fp4_SASS/`](../fp4_SASS/) (consumer Blackwell FP4 vs marketing `tcgen05`).
 
 ---
@@ -148,7 +148,7 @@ nvfp4/
 
 ## Related
 
-- [`../recipes/`](../recipes/) — verified Arena + local launch YAMLs  
+- [`../recipes/`](../recipes/) — Arena + local launch YAMLs  
 - [`../TUNING.md`](../TUNING.md) — decode/tuning notes  
 - [`../fp4_SASS/`](../fp4_SASS/) — FP4 instruction-level evidence  
 - [`../turboquant/`](../turboquant/) — 3-bit KV on the NVFP4 serving path  

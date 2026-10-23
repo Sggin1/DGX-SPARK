@@ -2,7 +2,7 @@
 
 Observations from running ComfyUI on DGX Spark (GB10, sm_121, aarch64, CUDA 13) with the [Triplany/comfyui-dgx-spark](https://github.com/Triplany/comfyui-dgx-spark) kit applied. Two real pip-shadowing risks that can silently undo the kit's hardware-specific wheel installs.
 
-Verified end-to-end on a live ComfyUI install on 2026-05-22:
+Worked end-to-end on a live ComfyUI install on 2026-05-22 (one install, one day):
 - Sage 2.2.0 rebuilt against current torch 2.10/2.11 + CUDA 13, kernels confirmed at `sm_120`
 - onnxruntime-gpu 1.25.0 (Jay0515 community wheel) installed, `CUDAExecutionProvider` confirmed
 - Shadowing mechanism reproduced and traced to shared import-path declaration

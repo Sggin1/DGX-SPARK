@@ -16,7 +16,7 @@ are good, but facts are better" — each protocol is the gate an idea must pass 
   (`flightrec.stats.compare`).
 - **Two gates, both required:** (a) *statistical* — CI excludes zero (`significant`); (b) *practical* —
   `|rel_pct| >= min_effect_pct` (default 1%, `practical`). At very low CV the CI excludes zero for
-  **trivial** sub-1% deltas — verified on the two-box shakedown 2026-06-06, where CPU-boost and THP came
+  **trivial** sub-1% deltas — seen on the two-box shakedown 2026-06-06, where CPU-boost and THP came
   back "significant" at only ~0.4–0.8% (boost even slightly *inverted*): statistically real, practically
   noise. A genuine lever clears **both** gates.
 - An idea that fails either gate is dead, not "probably fine."
@@ -27,7 +27,7 @@ are good, but facts are better" — each protocol is the gate an idea must pass 
   drops more than 50% below the run's own loaded p75 clock (relative droop, hardware-agnostic). Idle
   windows are not throttle and stay VALID. `flightrec.validate.verdict`.
 - **Never report tok/s from an INVALID run.** This closes the silent PD-throttle saga.
-- The NVML throttle bitmask is deliberately ignored — verified to fire spuriously on GB10.
+- The NVML throttle bitmask is deliberately ignored — we saw it fire spuriously on GB10.
 
 ## 4. The roofline trajectory
 - Achieved bandwidth is **derived** (no GB10 hardware DRAM counter exists): achieved GB/s = bytes moved
@@ -56,20 +56,22 @@ are good, but facts are better" — each protocol is the gate an idea must pass 
 **GB10 L2 = 25.2 MB** — a single 4096² FP4 weight (~8 MB) sits **entirely in L2**, so a reused-weight loop
 measures **L2, not DRAM** (marlin read 476 GB/s = **217% of the 220 wall** — impossible). Real decode reads
 each layer's weight **cold from DRAM** (the model is GBs; long-evicted by the time a token returns). The
-honest protocol (verified 2026-06-06 — three methods compared, rotation is the gold standard):
+protocol we settled on (2026-06-06; we compared three methods and rotation looked the most trustworthy to us, see the caveat on the numbers below):
 - **ROTATE over a weight POOL larger than L2** (≥ ~64 MB, e.g. 8 weights): each timed call uses a fresh
-  weight that's been evicted since its last use. Clean (CV ~2%), no perturbation. **This is the truth.**
+  weight that's been evicted since its last use. Looked clean in our runs (CV ~2%, though the raw samples were not saved), with no obvious perturbation. **This is our best current method, not a proven one.**
 - **Report the MEDIAN + bootstrap CI** (`stats.median_ci`), **never best-of** (best-of games the L2 residual).
-- **Do NOT use a big-buffer "flush" between calls** (e.g. a 256 MB write): verified **noisier and
-  over-penalizing** — marlin rotation **50 µs (85% wall, CV 2%)** vs flush **88 µs (49% wall, CV 29%)**; the
-  giant write perturbs the memory controller (write-drain caught in the next timing). Rotation, not flush.
-- **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method. Honest cold M=1:
+- **We would avoid a big-buffer "flush" between calls** (e.g. a 256 MB write): in our runs it looked **noisier and
+  over-penalizing**. Marlin with rotation read **50 µs (85% of the wall; one run, median of 48 samples, gx10)**. The flush
+  figures (about 88 µs, 49% of the wall, CV 29%) are from an earlier session; **the raw data was not preserved and we have not
+  re-run it**. Our guess is that the giant write perturbs the memory controller (write-drain caught in the next timing); that is
+  unconfirmed. We use rotation, not flush.
+- **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method. Cold M=1 in our runs (single runs, one box):
   marlin **85% of wall** (compute-GEMM that *does* stream cold), mm_fp4 **49%**, a naive custom GEMV **36%**
-  (occupancy-bound). Any cross-kernel decode head-to-head MUST use identical rotation+median on both sides,
+  (occupancy-bound). Any cross-kernel decode head-to-head should use identical rotation+median on both sides (we think),
   or it is not a comparison. (This protocol itself took 5 corrections to get right — hot→best-of→flush→rotation.)
 
 ## 5. Find, don't guess — the escalation ladder
-When a window is slow, **descend until you hit a layer you can change, or have proven is silicon:**
+When a window is slow, **descend until you hit a layer you can change, or have good evidence is silicon:**
 ```
 app / config  →  CUDA kernel  →  driver / runtime  →  OS / kernel  →  firmware  →  silicon
                                                        (governor,       (PD /        (273 GB/s wall,
@@ -99,14 +101,14 @@ collect artifacts, then `flightrec compare`):
    `compare` isolates the change's effect from ambient drift.
 
 **Prerequisite — calibrate first (experiment #0):** you cannot use one box as a control/replicate until
-they are proven equivalent. Run an idle twin compare; the **provenance diff must show no `DIFFERS`**
-(verified 2026-06-06: both driver 580.159.03, ceiling 3003 MHz — twins matched). And BOTH boxes must
+they look equivalent. Run an idle twin compare; the **provenance diff must show no `DIFFERS`**
+(checked 2026-06-06: both driver 580.159.03, ceiling 3003 MHz — twins matched). And BOTH boxes must
 start from the **same workload state** — a box carrying a resident model (e.g. vLLM) is not a clean
 control until it is cleared.
 
 ## 8. One GPU memory consumer at a time (GB10 unified-memory pre-flight)
 GB10's 128 GB is **unified** (~120 GB usable, CPU+GPU share one pool), so a campaign and the model it
-measures draw from the same memory. Two traps, both verified live (2026-06-08, unified-memory footprint investigation):
+measures draw from the same memory. Two traps, both seen live (2026-06-08, unified-memory footprint investigation):
 - **`--gpu-memory-utilization` is a fill target, not a fit limit.** vLLM grows its KV-cache pool to consume
   that fraction of the *whole box* — at `0.8` an omni server whose weights are only 20.9 GB expands to
   **~96–102 GB**, parking the box at the wall. **Cap it: `--kv-cache-memory-bytes` (≈17 GiB) → ~45 GB
@@ -119,7 +121,7 @@ measures draw from the same memory. Two traps, both verified live (2026-06-08, u
   and bound batch size. **Pre-flight every launch** with `nvidia-smi --query-gpu=memory.used` first.
 
 **Start-safe practice:** clamp fractional `gpu_memory_utilization` to a headroom ceiling (e.g. ≤0.80)
-unless the box is solo and the recipe has proven it needs a larger pool. Prefer explicit
+unless the box is solo and the recipe has shown it needs a larger pool. Prefer explicit
 `--kv-cache-memory-bytes` for co-resident helpers so a second consumer cannot fill the unified pool.
 Some community launchers implement this as an env-tunable util ceiling; the principle matters more than
 the wrapper.
@@ -160,7 +162,7 @@ the wrapper.
   already-running raw-nohup job, liveness via `/proc/<pid>`).
 - **On stall:** notify (always, to stderr + `--log`); optional `--checkpoint-cmd` / `--notify-cmd` shell
   hooks (`FLIGHTREC_STALL_MSG` in env); `--on-stall kill` does SIGTERM→SIGKILL (`--grace`). `--record <dir>`
-  writes the poll timeline (flat power + frozen mark count) as post-hoc proof.
+  writes the poll timeline (flat power + frozen mark count) as a post-hoc record.
 - **Concrete payoff:** an auto_round re-quant hung at block 16 (inductor/torch_compile stall), discovered
   ~2 h later via a manual check because it was a raw `nohup`. A 10-min `--stall-s` would have flagged it
   12× sooner. Complements the arms: `quiesce` = before measure, `smoke` = before commit, `memguard` = OOM
@@ -177,7 +179,7 @@ the wrapper.
   nonzero when contended** so it composes in a shell. GB10 has no per-PID GPU accounting (NVML compute-apps
   is N/A), so it reads the box's resting vitals rather than subtracting the foreigner.
 - **Floors are tunable** (`--busy-floor 10%`, `--power-floor 25 W`, `--load-floor 0.5/core`; mirror the
-  `watch` idle thresholds). Verified 2026-06-19: caught a contended box, passed a quiet one.
+  `watch` idle thresholds). Seen 2026-06-19: it flagged a contended box and passed a quiet one.
 
 ## 11. Tier-2 kernel tree via nsys (correlate, don't re-instrument)
 - **The recorder already emits NVTX** (`rec.phase()` → `torch.cuda.nvtx.range_push/pop`), so the Tier-1
