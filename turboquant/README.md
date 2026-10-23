@@ -84,6 +84,8 @@ Memory measured via `/proc/meminfo` (unified memory — `nvidia-smi` doesn't rep
 
 Zero creep. Memory decreased slightly as caches settled.
 
+*Scope: this is 8 sequential queries in a single server session, not a long-running soak test. Because vLLM pre-allocates the KV pool at startup, flat memory during queries is expected by design and says little about creep over hours or days. Long-session stability has not been tested.*
+
 ### KV Cache Cost Per Token
 
 Nemotron-3-Nano has only 7 attention layers (55 are Mamba-2 with fixed-size state). KV cache is inherently small.
@@ -181,6 +183,12 @@ See [`../nvfp4/`](../nvfp4/) (especially [`memory.md`](../nvfp4/memory.md)) for 
 - **Triton fallback only.** The PR includes fused CUDA kernels that aren't compiled for SM121 in this build. Throughput would improve with native kernels.
 - **Unofficial TurboQuant implementation.** Google has not released official code. The vLLM PR and `turboquant-torch` are community implementations based on the [paper](https://arxiv.org/abs/2504.19874).
 - **Tested on one model.** Nemotron-3-Nano-30B-A3B-NVFP4 only. Other models may behave differently.
+- **Point-in-time snapshot (March 2026).** Results are from the vLLM state and PR #38479 patch of that time. They have not been re-verified on current vLLM builds, and the patch may no longer apply cleanly.
+- **Single runs.** Each context length was measured once. There are no repeats or error bars, so small differences (for example TQ3 vs FP8 at 16K-32K) are within noise.
+- **FP8 comparison is partial.** FP8 1K/4K numbers are warmup artifacts, and no FP8 needle-in-haystack baseline exists at 64K or 192K, so the TQ3 recall failures there cannot be attributed to TQ3 vs the model.
+- **240K is a capacity result, not a speed result.** The 240K needle test passed at 1.8 tok/s with a 154K-token prompt; it shows the context fits and recalls, not that it is practical for interactive use.
+- **No long-session or soak testing.** Memory stability was only observed across test runs (see Memory Stability above).
+- **Raw data not preserved.** The original test harness and raw logs were not kept; the tables in this README are the only record, so they cannot be independently reproduced without rewriting the tests.
 
 ## Files
 
