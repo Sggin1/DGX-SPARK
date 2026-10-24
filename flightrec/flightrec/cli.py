@@ -19,6 +19,7 @@ import json
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 from flightrec.recorder import FlightRecorder
 from flightrec.report import summarize_run
@@ -34,6 +35,7 @@ from flightrec.smoke import smoke, format_card
 from flightrec.watch import watch, format_result
 from flightrec.live import live
 from flightrec import quiesce
+from flightrec import event_log, kernel_events, memguard_events, platform_snapshot
 from flightrec.model_bytes import from_config_file
 from flightrec.compute_cal import calibrate_compute, compute_peak_for
 
@@ -57,6 +59,10 @@ def main(argv=None):
         "live": _do_live,
         "quiesce": _do_quiesce,
         "model-bytes": _do_model_bytes,
+        "kernel-events": _do_kernel_events,
+        "events-log": _do_events_log,
+        "platform": _do_platform,
+        "platform-diff": _do_platform_diff,
     }.get(args.cmd)
     if handler is None:
         parser.print_help()
@@ -111,6 +117,8 @@ def _build_parser():
     rec.add_argument("command", nargs=argparse.REMAINDER)
     rep = sub.add_parser("report", help="summarize a recorded artifact")
     rep.add_argument("run_dir")
+    _add_kernel_events_parser(sub)
+    _add_platform_parsers(sub)
     cmp_p = sub.add_parser(
         "compare",
         help="hardware diff of two artifacts, OR cross-box replication verdict with --replicate-with",
@@ -515,6 +523,266 @@ def _do_record(args):
     print(f"\n[flightrec] artifact -> {args.out}")
     summarize_run(args.out)
     return code
+
+
+def _add_kernel_events_parser(sub):
+    ke = sub.add_parser(
+        "kernel-events",
+        help="list GPU/driver-related kernel log lines from the journal (read-only)",
+    )
+    ke.add_argument("--since", default=None, help="journalctl time, e.g. '2 days ago'")
+    ke.add_argument("--until", default=None)
+    ke.add_argument("--boot", type=int, default=None, help="boot offset: 0 current, -1 previous")
+    ke.add_argument(
+        "--all-boots",
+        action="store_true",
+        dest="all_boots",
+        help="scan every boot in `journalctl --list-boots`, one at a time",
+    )
+    ke.add_argument("--json", action="store_true", help="print events + summary as JSON")
+    ke.add_argument(
+        "--guard",
+        action="store_true",
+        help="also list flightrec-memguard warn/kill lines for the same time range",
+    )
+    ke.add_argument(
+        "--max-lines",
+        type=int,
+        default=50,
+        dest="max_lines",
+        help="cap on lines printed (default 50)",
+    )
+    ke.add_argument(
+        "--group",
+        action="store_true",
+        help="counted stack: one line per normalized message instead of every line",
+    )
+    ke.add_argument(
+        "--max-groups",
+        type=int,
+        default=20,
+        dest="max_groups",
+        help="cap on groups printed with --group (default 20)",
+    )
+    ke.add_argument(
+        "--log",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PATH",
+        help="also append the counted groups to a rolling JSON-Lines file "
+        "(no PATH: $XDG_STATE_HOME/flightrec/events.jsonl, else ~/.local/state/...)",
+    )
+    ke.add_argument("--max-bytes", type=int, default=event_log.DEFAULT_MAX_BYTES,
+                    dest="max_bytes", help="rotate the log above this size (default 5 MiB)")
+    ke.add_argument("--backups", type=int, default=event_log.DEFAULT_BACKUPS,
+                    help="rotated files to keep (default 5)")
+    ke.add_argument("--no-compress", action="store_true", dest="no_compress",
+                    help="keep rotated files as plain text instead of .gz")
+    ke.add_argument("--max-age-days", type=float, default=None, dest="max_age_days",
+                    help="delete rotated files older than this many days (by mtime)")
+    ke.add_argument("--since-last", action="store_true", dest="since_last",
+                    help="with --log: only scan after the newest event already logged")
+    ke.add_argument("--quiet", action="store_true",
+                    help="with --log: print only the one-line log result")
+    elog = sub.add_parser("events-log", help="read the rolling event log written by --log")
+    elog_sub = elog.add_subparsers(dest="elog_cmd")
+    show = elog_sub.add_parser("show", help="print the live file plus rotated .gz backups")
+    show.add_argument("path", nargs="?", default=None, help="log file (default location if omitted)")
+    show.add_argument("--last", type=int, default=None,
+                      help="only the last N records (default 20; all records with --group)")
+    show.add_argument("--group", action="store_true", help="sum records into counted groups")
+    show.add_argument("--max-groups", type=int, default=20, dest="max_groups")
+
+
+def _log_target(args):
+    """Path for --log (None when not asked for)."""
+    if args.log is None:
+        return None
+    return Path(args.log) if args.log else event_log.default_path()
+
+
+def _scan_for_cli(args, since):
+    if args.all_boots:
+        events, failed = kernel_events.scan_boots(since, args.until)
+    else:
+        events, reason = kernel_events.scan(since, args.until, args.boot)
+        failed = [(args.boot or 0, reason)] if reason else []
+    return events, failed
+
+
+def _do_kernel_events(args):
+    log_path = _log_target(args)
+    if args.since_last and log_path is None:
+        print("[flightrec] --since-last needs --log")
+        return 2
+    since, guard_since = args.since, args.since
+    if args.since_last:
+        since = event_log.since_from_state(log_path) or since
+        guard_since = event_log.since_from_state(log_path, "last_guard") or guard_since
+    events, failed = _scan_for_cli(args, since)
+    summary = kernel_events.summarize(events)
+    guard = memguard_events.scan(guard_since, args.until, args.boot) if args.guard else None
+    logged = _write_log(args, log_path, events, failed, guard) if log_path else None
+    if args.json:
+        bad = [{"boot": b, "reason": r} for b, r in failed]
+        data = {"summary": summary, "unreadable": bad}
+        data.update({"groups": kernel_events.group(events)} if args.group else {"events": events})
+        if guard:
+            data["memguard"] = {"unreadable": guard[1]}
+            data["memguard"].update({"groups": memguard_events.group(guard[0])} if args.group
+                                    else {"events": guard[0]})
+        if logged:
+            data["log"] = logged
+        print(json.dumps(data, indent=2))
+        return 0
+    if not (args.quiet and logged):
+        print(_format_kernel_events(events, summary, failed, args))
+        if guard:
+            print(_format_memguard(guard[0], guard[1], args))
+    if logged:
+        print(_format_log_result(logged))
+    return 1 if logged and logged.get("reason") else 0
+
+
+def _write_log(args, path, events, failed, guard):
+    """Append this scan's groups; remember the newest event times for --since-last."""
+    records = event_log.records_from_events(events)
+    if guard and not guard[1]:
+        records += event_log.records_from_events(guard[0])
+    stats, reason = event_log.append(
+        records, path, max_bytes=args.max_bytes, backups=args.backups,
+        compress=not args.no_compress, max_age_days=args.max_age_days)
+    out = dict(stats, path=str(path), reason=reason, records=len(records))
+    if reason is None and not failed:
+        fields = {"last_event": event_log.latest_time(events)}
+        if guard and not guard[1]:
+            fields["last_guard"] = event_log.latest_time(guard[0])
+        out["state_reason"] = event_log.save_state(path, **fields)
+    return out
+
+
+def _format_log_result(info):
+    if info["reason"]:
+        return f"event log: could not write ({info['reason']})"
+    text = (f"event log: {info['appended']} records appended, {info['merged']} merged "
+            f"-> {info['path']}")
+    if info["rotated"]:
+        text += " (rotated)"
+    if not info["locked"]:
+        text += " (no file lock on this platform)"
+    return text
+
+
+def _format_memguard(events, reason, args):
+    if reason:
+        return f"memory guard: could not read ({reason})"
+    if getattr(args, "group", False):
+        groups = memguard_events.group(events)
+        out = [f"memory guard: {len(events)} events in {len(groups)} groups (listed only)"
+               if events else "memory guard: none"]
+        return "\n".join(out + _group_rows(groups, args))
+    out = [f"memory guard: {len(events)} events (listed only)" if events else "memory guard: none"]
+    out += [f"{e['time']} [{e['category']}] {e['line']}" for e in events[: max(0, args.max_lines)]]
+    return "\n".join(out)
+
+
+def _group_rows(groups, args):
+    shown = groups[: max(0, args.max_groups)]
+    out = []
+    for g in shown:
+        boots = ""
+        if len(g["by_boot"]) > 1:
+            boots = "  [by boot: " + ", ".join(f"{b}: {n}" for b, n in g["by_boot"].items()) + "]"
+        out.append(kernel_events.format_group(g) + boots)
+    if len(groups) > len(shown):
+        out.append(f"... {len(groups) - len(shown)} more groups (raise --max-groups)")
+    return out
+
+
+def _do_events_log(args):
+    if args.elog_cmd != "show":
+        print("usage: flightrec events-log show [PATH] [--last N] [--group]")
+        return 1
+    path = Path(args.path) if args.path else event_log.default_path()
+    records, skipped = event_log.read_all(path)
+    if args.group:
+        records = records[-args.last:] if args.last else records
+        groups = event_log.stack(records)
+        print(f"event log {path}: {len(records)} records, {len(groups)} groups")
+        print("\n".join(_group_rows(groups, args)))
+    else:
+        last = 20 if args.last is None else max(0, args.last)
+        print(f"event log {path}: {len(records)} records")
+        for r in (records[-last:] if last else []):
+            print(f"{r['ts']} boot {r.get('boot')} [{r['category']}] {r['count']} x {r['example']}"
+                  f"  (first {r['first']}, last {r['last']})")
+    if skipped:
+        print(f"skipped {skipped} unreadable line(s) or file(s)")
+    return 0
+
+
+def _add_platform_parsers(sub):
+    plat = sub.add_parser("platform", help="print a read-only platform snapshot (kernel, BIOS, memory)")
+    plat.add_argument("--json", action="store_true", help="print the snapshot as JSON")
+    diff = sub.add_parser(
+        "platform-diff",
+        help="show the fields that differ between two header.json or `platform --json` files",
+    )
+    diff.add_argument("a")
+    diff.add_argument("b")
+
+
+def _do_platform(args):
+    snap = platform_snapshot.snapshot()
+    if args.json:
+        print(json.dumps(snap, indent=2))
+    else:
+        for key, value in snap.items():
+            print(f"{key}: {value}")
+    return 0
+
+
+def _load_platform(path):
+    """Snapshot dict from a header.json (its ``platform`` entry) or a snapshot file."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if "platform" in data or "gpu_name" in data or "recorder" in data:
+        return data.get("platform")  # a header.json; None for older artifacts
+    return data
+
+
+def _do_platform_diff(args):
+    try:
+        a, b = _load_platform(args.a), _load_platform(args.b)
+    except (OSError, ValueError) as exc:
+        print(f"[flightrec] could not read snapshot: {exc}")
+        return 1
+    if not a or not b:
+        print("[flightrec] no platform snapshot in " + (args.a if not a else args.b))
+        return 1
+    changes = platform_snapshot.diff(a, b)
+    for key, (left, right) in changes.items():
+        print(f"{key}: {left} -> {right}")
+    if not changes:
+        print("no differences")
+    return 0
+
+
+def _format_kernel_events(events, summary, failed, args):
+    out = [f"kernel events: {summary['total']}"]
+    out += [f"  {c}: {n}" for c, n in sorted(summary["by_category"].items())]
+    if args.all_boots:
+        for boot, counts in summary["by_boot"].items():
+            out.append(f"  boot {boot}: " + ", ".join(f"{c} {n}" for c, n in sorted(counts.items())))
+    for boot, reason in failed:
+        out.append(f"could not read boot {boot}: {reason}")
+    if args.group:
+        return "\n".join(out + _group_rows(kernel_events.group(events), args))
+    shown = events[: max(0, args.max_lines)]
+    out += [f"{e['time']} boot {e['boot']} [{e['category']}] {e['line']}" for e in shown]
+    if len(events) > len(shown):
+        out.append(f"... {len(events) - len(shown)} more (raise --max-lines)")
+    return "\n".join(out)
 
 
 def _do_report(args):
