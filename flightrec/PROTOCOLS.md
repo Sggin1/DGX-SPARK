@@ -72,19 +72,20 @@ protocol we settled on (2026-06-06; we compared three methods and rotation looke
   per box) gave, in µs on gx10 / gx11: marlin 37.8 / 39.7, mm_fp4 53.1 / 51.3, a naive single-buffered custom kernel
   125.8 / 103.8. The launch overhead was about 9 µs for marlin and about 45 µs for mm_fp4, so event timing overstated mm_fp4 the
   most. The event-timed figures above are kept for the record, but their ratios (mm_fp4 about 2 times slower than marlin) should
-  not be used; with graph timing mm_fp4 looked about 1.3 to 1.4 times slower at M=1. Part of that was our own harness, which
-  recomputed mm_fp4's scale factor inside every timed call (two extra small kernels). With that moved out, one re-run on gx10
-  gave mm_fp4 48.2 µs against marlin 39.2 µs (a ratio of 1.23), and a profiler showed the GEMM kernel alone at 47.0 µs against
-  marlin's 39.7 µs; the same re-run on gx11 is still to be repeated. We found the launch-overhead problem by accident, because
+  not be used; with graph timing mm_fp4 looked about 1.2 to 1.7 times slower than marlin at M=1 (the range over launches, boxes and shapes, see below). Part of the early difference was our own harness, which
+  recomputed mm_fp4's scale factor inside every timed call (two extra small kernels). With that moved out, a re-run on gx10
+  gave mm_fp4 48.2 µs against marlin 39.2 µs (a ratio of 1.23), while later launches of the same script gave 1.33 to 1.45, and a profiler showed the GEMM kernel alone at 47.0 µs against
+  marlin's 39.7 µs. We found the launch-overhead problem by accident, because
   a second timing loop disagreed with the first. We now suggest checking any timing with a second, independent method (graph replay or a
   profiler's kernel duration) and treating a disagreement as a finding.
+- **Review update: timings vary between process launches.** The 200-sample intervals above describe one launch. Repeating the same script in a fresh process (4096x4096, M=1, several launches per box over about 13 hours, including one power cycle) changed the per-call median by 4 to 8% for marlin, 1 to 9% for mm_fp4, 16 to 24% for our single-buffered custom kernel and 37 to 39% for the double-buffered one (up to 43% in some cells). The ratio of mm_fp4 to marlin at M=1 was 1.23 to 1.45 on gx10 and 1.29 to 1.39 on gx11 over these launches, and 1.54 to 1.69 for the 4096x12288 and 12288x4096 shapes in the final pass. We do not know the cause; memory placement is one guess we have not tested. The lowest-time kernel at each batch size was the same in the sessions compared.
 - **Review update: the bandwidth "wall" is not a ceiling for read-heavy kernels.** 9.45 MB in the graph-timed 37.8 µs for marlin is
   about 250 GB/s, above the 220 GB/s triad figure used for "% of wall" here and elsewhere in these notes, and about equal to a
   read-only sum reduction measured at 247 GB/s (best of 50, fp32, one session on gx10). Percentages computed against the
   triad figure, including the 85% above, should not be used.
 - **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method, and from a timing method that includes
   launch cost. In a batch-size sweep (M = 1 to 512, 4096², graph-timed, one session per box) marlin had the lowest time per
-  token up to M = 64 and mm_fp4 from M = 96 up, on both boxes. A second session and two other shapes (4096x12288 and
+  token up to M = 64 and mm_fp4 from M = 96 up, on both boxes. Further sessions and two other shapes (4096x12288 and
   12288x4096) showed the same pattern, apart from the 12288x4096 shape at M = 128, where marlin was ahead on both boxes. Our two naive custom kernels were not ahead in any band we
   could reproduce, so we make no claim that they beat marlin or mm_fp4 anywhere. These are single sessions; the spread
   between boxes and sessions is larger than the within-run intervals. We guess (untested) that the custom kernels are
