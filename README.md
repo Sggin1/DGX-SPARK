@@ -4,6 +4,8 @@ DGX Spark research and tests — containers, benchmarks, and investigation notes
 
 Entries address compatibility issues with CUDA 13.x, aarch64, and SM121 that aren't covered by upstream containers or documentation. Each folder is a self-contained topic; dates and environment details live inside each folder's README.
 
+**How to read this repo.** Everything here is what we saw in our own tests, on our own hardware, on the dates given. Words like "verified" or "confirmed" mean "we ran it and observed this, once or a few times", not that it is proven or general. Samples are small and some raw data was not kept. Treat results as leads to check on your own setup.
+
 ## Contents
 
 ### 1. [nvfp4/](nvfp4/) — NVFP4 on DGX Spark (friction → working)
@@ -45,7 +47,7 @@ Field-tested runbook for pairing two NVIDIA DGX Sparks (ASUS Ascent GX10) over a
 
 - Symptom → fix table at the top of [`dual-spark/DUAL_SPARK_SETUP.md`](dual-spark/DUAL_SPARK_SETUP.md)
 - Visual cable / twin / PCI map: [`dual-spark/TOPOLOGY.md`](dual-spark/TOPOLOGY.md) (one cable ≈ 200 Gb/s total)
-- Verified: ~195–197 Gb/s RDMA aggregate (full single-cable budget)
+- Measured: ~195–197 Gb/s RDMA aggregate (about a full single-cable budget)
 - Patches eugr's launcher with NCCL multi-rail + RoCEv2 GID overrides
 
 ### 6. [atlas/](atlas/) — Atlas Inference Engine: head-to-head vs vLLM
@@ -67,10 +69,10 @@ Two real pip-shadowing risks observed while running ComfyUI on Spark with the [T
 
 - Shadowing mechanism traced to shared `top_level.txt` declaration across distinct distributions
 - `get_available_providers()` is the reliable detector — startup-log GPU-discovery warnings are misleading
-- Both findings verified against a live ComfyUI install on 2026-05-22
+- Both findings observed on a live ComfyUI install on 2026-05-22
 - Cross-references `fp4_SASS/` for the sm_120 / sm_121 SASS-equivalence basis behind the `sm_120` rebuild target
 
-### 9. [recipes/](recipes/) — Verified serving launch YAMLs
+### 9. [recipes/](recipes/) — Serving launch YAMLs (Spark Arena + our boxes)
 
 Spark Arena + local measured recipes (NVFP4 and related). Living “run this” counterpart to [`nvfp4/`](nvfp4/).
 

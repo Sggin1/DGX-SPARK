@@ -1,7 +1,7 @@
-# Verified DGX Spark serving recipes (captured from Spark Arena)
+# DGX Spark serving recipes (captured from Spark Arena)
 
 **Captured:** 2026-06-05 from the [Spark Arena leaderboard](https://spark-arena.com/leaderboard)
-(community DGX Spark benchmark, `recipeType: spark-vllm-docker`). These are *live, benchmarked*
+(community DGX Spark benchmark, `recipeType: spark-vllm-docker`). These are recipes as listed on the leaderboard on that date; the numbers are the community's, not ours, unless a file says otherwise. They are
 launch recipes — the practical counterpart to the combined NVFP4 notes in
 [`../nvfp4/`](../nvfp4/) (friction → working narrative + dated `archive/`).
 
@@ -59,7 +59,7 @@ Rank #13 is the **exact model the March lab notes were built around**, so it's a
 | max-num-seqs / ctx | 1 / 8192 | 20 / 262144 |
 
 **Key takeaways**
-1. **Stock upstream vLLM, no fork** — confirmed by two recipes running the official aarch64/cu130 image.
+1. **Stock upstream vLLM, no fork** — two of these recipes run the official aarch64/cu130 image.
 2. **The "always force Marlin / disable FlashInfer" rule is now per-model.** Text Nemotron-Nano (#13)
    enables FlashInfer MoE FP4; the multimodal Omni (#22) still pins Marlin. Both on the official image.
 3. **NVFP4 format split:** modelopt (nvidia/*) vs compressed-tensors (RedHatAI/*) — the launch flag

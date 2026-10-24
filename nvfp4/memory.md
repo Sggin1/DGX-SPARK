@@ -22,7 +22,7 @@ Eventually hits swap, system freezes.
 - `VLLM_NVFP4_GEMM_BACKEND=marlin` — bypass broken CUTLASS FP4 kernels
 - `VLLM_USE_FLASHINFER_MOE_FP4=0` — disable FlashInfer FP4 MoE path
 
-**Status:** SOLVED. Zero creep confirmed across 8+ queries. Memory decreased 1.2 GB.
+**Status:** No creep seen in our testing: memory stayed flat across 8+ queries in one short session (it fell by 1.2 GB). This was not a long-running test.
 
 ## Issue 2: KV Cache OVER-PROVISIONING (high baseline, but stable)
 
@@ -78,15 +78,15 @@ The TurboQuant overhead (~25 GB) is split between:
 The actual KV cache *per token* is smaller with tq3 (3 bits vs 8 bits = 62.5% savings),
 but the minimum allocation threshold is higher due to the packed format.
 
-## Quick Reference: Safe Configs
+## Quick Reference: Configs that worked for us
 
-**FP8 baseline (32 GB, proven stable):**
+**FP8 baseline (32 GB, stable in our short tests):**
 ```bash
 --enforce-eager --max-num-seqs 1 --max-model-len 8192 \
 --gpu-memory-utilization 0.2 --kv-cache-dtype fp8
 ```
 
-**TurboQuant tq3 (55-58 GB, proven stable):**
+**TurboQuant tq3 (55-58 GB, stable in our short tests):**
 ```bash
 --enforce-eager --max-num-seqs 1 --max-model-len 8192 \
 --gpu-memory-utilization 0.25 --kv-cache-dtype tq3

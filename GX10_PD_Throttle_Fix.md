@@ -1,8 +1,8 @@
 # NVIDIA GB10 (DGX Spark) — PD Throttle Wedge: Diagnosis & Fix
 
-> **Status:** verified end-to-end procedure (was: draft). Cold drain → flash → second cold drain workflow executed on ASUS Ascent GX10 (gx10) 2026-05-19, took the box from 611 MHz / 16 W wedged to 2180 MHz / 93 W / 56 bf16 TFLOPS healthy. ESRT version-readback caveat (§6) was discovered during that verification and is captured here so future operators don't mistake it for a flash failure.
+> **Status:** procedure that worked end-to-end for us on one box (was: draft). Cold drain → flash → second cold drain workflow executed on ASUS Ascent GX10 (gx10) 2026-05-19, took the box from 611 MHz / 16 W wedged to 2180 MHz / 93 W / 56 bf16 TFLOPS healthy. ESRT version-readback caveat (§6) was discovered during that run and is captured here so future operators don't mistake it for a flash failure.
 
-**Last updated:** 2026-05-19 (PD 0x507 flash + post-flash cold drain procedure verified on ASUS Ascent GX10)
+**Last updated:** 2026-05-19 (PD 0x507 flash + post-flash cold drain procedure tried on ASUS Ascent GX10; it worked)
 **Applies to:** NVIDIA GB10 Grace Blackwell — both NVIDIA-reference DGX Spark and partner-branded variants (ASUS Ascent GX10, Dell partner GB10, etc.)
 **Symptom captured:** GPU pinned at 611 MHz / ~13 W / thermal "cap" at ~50 °C
 
@@ -10,9 +10,9 @@
 
 ## TL;DR
 
-The symptom — **611 MHz pinned clock, ~13 W power draw, ~50 °C temperature cap under load** — is the canonical USB-C PD (Power Delivery) controller firmware wedge on GB10 hardware. 611 MHz is the literal hardcoded fallback P-state firmware drops into, not a rounding artifact. The temperature "cap" is misleading: the GPU is in a low P-state, not thermally limited, so it never gets warm enough to actually throttle.
+The symptom — **611 MHz pinned clock, ~13 W power draw, ~50 °C temperature cap under load** — looked like a USB-C PD (Power Delivery) controller firmware wedge on our GB10 box, and the cold-drain steps below fixed it for us. 611 MHz looks like the fallback P-state the firmware drops into (our reading, not a vendor statement). The temperature "cap" is misleading: the GPU is in a low P-state, not thermally limited, so it never gets warm enough to actually throttle.
 
-**Cold-drain reset of the power brick is the confirmed primary fix** (6+ independent user confirmations, plus our own 2026-05-19 gx10 confirmation). Holding the power button alone is not enough — the PD MCU lives inside the brick and needs to lose rail voltage. **After the unwedge, flash the latest vendor-signed PD firmware** to reduce recurrence, then do a *second* cold drain so the new firmware activates from EEPROM.
+**Cold-drain reset of the power brick is the fix that worked for us and that 6+ other users reported working** (their reports, which we did not check ourselves; our own 2026-05-19 gx10 run is one box). Holding the power button alone is not enough — the PD MCU lives inside the brick and needs to lose rail voltage. **After the unwedge, flash the latest vendor-signed PD firmware** to reduce recurrence, then do a *second* cold drain so the new firmware activates from EEPROM.
 
 ---
 
@@ -96,7 +96,7 @@ sudo fwupdmgr get-upgrades             # show what's available, install nothing 
 sudo fwupdmgr update                   # actually flash pending updates
 ```
 
-**Example: ASUS Ascent GX10 (verified 2026-05-19, gx10 from 0x001 → 0x507)**
+**Example: ASUS Ascent GX10 (worked 2026-05-19, gx10 from 0x001 → 0x507)**
 
 `get-upgrades` showed:
 

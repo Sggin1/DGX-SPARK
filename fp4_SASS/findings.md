@@ -8,9 +8,9 @@
 
 ## Verdict
 
-The "missing 1 PFLOP FP4" on DGX Spark is a **silicon-level gap**, not a software gate. Empirically confirmed at three layers — Python admissibility, the `ptxas` SASS encoder, and live runtime arch detection on the actual hardware.
+The "missing 1 PFLOP FP4" on DGX Spark looks, in our testing, like a **silicon-level gap** and not a software gate. We saw consistent results at three layers — Python admissibility, the `ptxas` SASS encoder, and live runtime arch detection on the actual hardware.
 
-The consumer-Blackwell warp-level FP4 MMA path *does* work on Spark, and emits **byte-identical SASS** to the RTX 5060 Ti. The marketing PFLOP number lives in a different MMA pipe (`tcgen05`) that is datacenter-only and physically absent on GB10.
+The consumer-Blackwell warp-level FP4 MMA path *did* work on Spark in our tests, and emits **byte-identical SASS** to the RTX 5060 Ti. The marketing PFLOP number lives in a different MMA pipe (`tcgen05`) that, as far as we could tell, is datacenter-only and absent on GB10.
 
 ---
 
