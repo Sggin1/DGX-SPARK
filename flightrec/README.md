@@ -72,6 +72,7 @@ Example unit file: [`systemd/flightrec-memguard.service`](systemd/flightrec-memg
 |---|---|---|
 | `record` | wrap a command → artifact | `--out` *(req)*, `--hz`(20), `--parse-tokens-re`, `--work-units`, `--work-unit` |
 | `report` | provenance + validity + rollup + phase tree | positional `run_dir` |
+| `kernel-events` | list GPU/driver-related kernel log lines (read-only) | `--since`, `--until`, `--boot`, `--all-boots`, `--json`, `--max-lines`(50) |
 | `measure` | validity-gated utilization vector | `--bytes`, `--flops`(0), `--tokens` |
 | `aggregate` | N-run median/IQR/CV% + bootstrap CI (drops INVALID) | `--metric`(kernel_s), … |
 | `sample` | adaptive-N until CI half-width &lt; target | `--out-prefix` *(req)*, `--cmd …`, `--until-ci`(3.0) |
@@ -169,6 +170,21 @@ What to keep in mind (from our testing and from reading the code):
 
 ---
 
+## Kernel events
+
+```bash
+flightrec kernel-events --since "2 days ago"
+flightrec kernel-events --all-boots --json
+```
+
+This only reads the kernel log the systemd journal already keeps (`journalctl -k`, which keeps earlier boots when the journal is set to persistent storage); no service is installed and nothing is enabled. It lists lines as data and does not interpret them. A line is kept if it matches one of these (case-insensitive, first match wins): `nvrm_xid` (`NVRM: Xid`), `nvrm` (other `NVRM:` lines), `thermal` (thermal, overheat), `throttle` (throttl, slowdown), `oom` (out of memory, oom-kill), `watchdog` (hung task, soft lockup, watchdog). `audit:` lines are ignored and everything else is skipped. The output is counts per category (per boot with `--all-boots`, which scans each boot from `journalctl --list-boots` separately and names any boot it could not read), then up to `--max-lines` lines.
+
+`record` also scans the run window when the command finishes. `header.json` gets a `kernel_events` entry (status ok or unreadable with a reason, the count, the window), and any matching lines go to `kernel_events.json`; `report` prints a short section for them. Events do not make a run invalid. If `journalctl` is missing or the journal is not readable for the current user (some systems need membership of the `systemd-journal` or `adm` group), the result is an empty list plus the reason, and the recording is unaffected. Artifacts recorded before this field existed simply print no such section.
+
+What we saw: one line, `NVRM: refcntRequestReference_IMPL: Failed to enter state 1 (current state: 0, status: 0x00000056)`, appeared once each time a `torch.profiler` session started on a GB10. We do not know what it means or whether it matters; listing it is the point of this command, not a conclusion about it.
+
+---
+
 ## Artifact layout
 
 Each `--out` directory is self-describing:
@@ -178,6 +194,7 @@ Each `--out` directory is self-describing:
 | `header.json` | driver, GPU name, clock ceiling, BW wall source, recorder overhead |
 | `samples.parquet` | per-tick GPU/CPU/mem/PSI timeline |
 | `phases.parquet` | nested phase marks (if used) |
+| `kernel_events.json` | matching kernel log lines for the run window (only if any matched) |
 
 ---
 

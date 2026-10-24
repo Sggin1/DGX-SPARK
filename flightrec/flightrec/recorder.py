@@ -30,6 +30,7 @@ import pandas as pd
 from flightrec.sample_gpu import open_gpu, gpu_fast, gpu_energy, gpu_util
 from flightrec.sample_cpu import read_stat, cpu_busy, cpu_freq_mhz, mem_sample, psi_sample
 from flightrec.header import capture_header
+from flightrec import kernel_events
 
 _RAW = time.CLOCK_MONOTONIC_RAW
 _CPU = time.CLOCK_THREAD_CPUTIME_ID  # the sampler thread's own CPU time (self-overhead)
@@ -53,10 +54,12 @@ class FlightRecorder:
         self._diag = {}
         self._quiesce = None
         self._work = None
+        self._wall = [None, None]
 
     def __enter__(self):
         self.out.mkdir(parents=True, exist_ok=True)
         self._quiesce = self._sample_quiescence()
+        self._wall[0] = time.time()
         self._t0 = time.clock_gettime_ns(_RAW)
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -79,6 +82,7 @@ class FlightRecorder:
     def __exit__(self, *_exc):
         self._stop.set()
         self._thread.join(timeout=2.0)
+        self._wall[1] = time.time()
         self._flush()
         return False
 
@@ -164,6 +168,8 @@ class FlightRecorder:
             header["quiescence"] = self._quiesce
         if self._work is not None:
             header["work"] = self._work
+        header["kernel_events"] = kernel_events.capture_for_run(
+            self.out, self._wall[0], self._wall[1])
         (self.out / "header.json").write_text(
             json.dumps(header, indent=2), encoding="utf-8")
 

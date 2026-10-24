@@ -45,6 +45,9 @@ def summarize_run(run_dir):
     efficiency = _fmt_work_per_joule(work_per_joule(header, scoped, result))
     if efficiency:
         print(efficiency)
+    kernel = _fmt_kernel_events(header, _load_kernel_events(run_dir))
+    if kernel:
+        print(kernel)
     tree = build_tree(phases, samples)
     if tree:
         print("\nphase tree (duration · energy · mean clock):\n" + format_tree(tree))
@@ -89,6 +92,35 @@ def _fmt_work_per_joule(w):
             f" over {w['energy_j']:.1f} J\n"
             "  energy = GPU-reported counter (NVML), not wall power: excludes CPU, board, "
             "PSU losses")
+
+
+def _load_kernel_events(run_dir):
+    """Events stored by `record` (kernel_events.json), or [] when absent or unreadable."""
+    try:
+        return json.loads((Path(run_dir) / "kernel_events.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def _fmt_kernel_events(header, events, show=5):
+    """Kernel-log section; "" for older artifacts that have no ``kernel_events`` field."""
+    info = header.get("kernel_events")
+    if not info:
+        return ""
+    head = "\nkernel events during the run: "
+    if info.get("status") != "ok":
+        return head + f"could not read kernel log ({info.get('reason') or 'unknown reason'})"
+    if not info.get("count"):
+        return head + "none"
+    counts = {}
+    for e in events:
+        counts[e["category"]] = counts.get(e["category"], 0) + 1
+    by_cat = ", ".join(f"{c} {n}" for c, n in sorted(counts.items()))
+    lines = [head + f"{info['count']}" + (f" ({by_cat})" if by_cat else "")]
+    lines += [f"  {e['time']} [{e['category']}] {e['line']}" for e in events[:show]]
+    if len(events) > show:
+        lines.append(f"  ... {len(events) - show} more in kernel_events.json")
+    return "\n".join(lines)
 
 
 def _fmt_header(h):

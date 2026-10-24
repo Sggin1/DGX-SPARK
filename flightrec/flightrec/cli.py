@@ -34,6 +34,7 @@ from flightrec.smoke import smoke, format_card
 from flightrec.watch import watch, format_result
 from flightrec.live import live
 from flightrec import quiesce
+from flightrec import kernel_events
 from flightrec.model_bytes import from_config_file
 from flightrec.compute_cal import calibrate_compute, compute_peak_for
 
@@ -57,6 +58,7 @@ def main(argv=None):
         "live": _do_live,
         "quiesce": _do_quiesce,
         "model-bytes": _do_model_bytes,
+        "kernel-events": _do_kernel_events,
     }.get(args.cmd)
     if handler is None:
         parser.print_help()
@@ -111,6 +113,7 @@ def _build_parser():
     rec.add_argument("command", nargs=argparse.REMAINDER)
     rep = sub.add_parser("report", help="summarize a recorded artifact")
     rep.add_argument("run_dir")
+    _add_kernel_events_parser(sub)
     cmp_p = sub.add_parser(
         "compare",
         help="hardware diff of two artifacts, OR cross-box replication verdict with --replicate-with",
@@ -515,6 +518,60 @@ def _do_record(args):
     print(f"\n[flightrec] artifact -> {args.out}")
     summarize_run(args.out)
     return code
+
+
+def _add_kernel_events_parser(sub):
+    ke = sub.add_parser(
+        "kernel-events",
+        help="list GPU/driver-related kernel log lines from the journal (read-only)",
+    )
+    ke.add_argument("--since", default=None, help="journalctl time, e.g. '2 days ago'")
+    ke.add_argument("--until", default=None)
+    ke.add_argument("--boot", type=int, default=None, help="boot offset: 0 current, -1 previous")
+    ke.add_argument(
+        "--all-boots",
+        action="store_true",
+        dest="all_boots",
+        help="scan every boot in `journalctl --list-boots`, one at a time",
+    )
+    ke.add_argument("--json", action="store_true", help="print events + summary as JSON")
+    ke.add_argument(
+        "--max-lines",
+        type=int,
+        default=50,
+        dest="max_lines",
+        help="cap on lines printed (default 50)",
+    )
+
+
+def _do_kernel_events(args):
+    if args.all_boots:
+        events, failed = kernel_events.scan_boots(args.since, args.until)
+    else:
+        events, reason = kernel_events.scan(args.since, args.until, args.boot)
+        failed = [(args.boot or 0, reason)] if reason else []
+    summary = kernel_events.summarize(events)
+    if args.json:
+        bad = [{"boot": b, "reason": r} for b, r in failed]
+        print(json.dumps({"summary": summary, "unreadable": bad, "events": events}, indent=2))
+    else:
+        print(_format_kernel_events(events, summary, failed, args))
+    return 0
+
+
+def _format_kernel_events(events, summary, failed, args):
+    out = [f"kernel events: {summary['total']}"]
+    out += [f"  {c}: {n}" for c, n in sorted(summary["by_category"].items())]
+    if args.all_boots:
+        for boot, counts in summary["by_boot"].items():
+            out.append(f"  boot {boot}: " + ", ".join(f"{c} {n}" for c, n in sorted(counts.items())))
+    for boot, reason in failed:
+        out.append(f"could not read boot {boot}: {reason}")
+    shown = events[: max(0, args.max_lines)]
+    out += [f"{e['time']} boot {e['boot']} [{e['category']}] {e['line']}" for e in shown]
+    if len(events) > len(shown):
+        out.append(f"... {len(events) - len(shown)} more (raise --max-lines)")
+    return "\n".join(out)
 
 
 def _do_report(args):
