@@ -72,8 +72,11 @@ protocol we settled on (2026-06-06; we compared three methods and rotation looke
   per box) gave, in µs on gx10 / gx11: marlin 37.8 / 39.7, mm_fp4 53.1 / 51.3, a naive single-buffered custom kernel
   125.8 / 103.8. The launch overhead was about 9 µs for marlin and about 45 µs for mm_fp4, so event timing overstated mm_fp4 the
   most. The event-timed figures above are kept for the record, but their ratios (mm_fp4 about 2 times slower than marlin) should
-  not be used; with graph timing mm_fp4 is about 1.3 to 1.4 times slower at M=1. We found this by accident, because a second
-  timing loop disagreed with the first. We now suggest checking any timing with a second, independent method (graph replay or a
+  not be used; with graph timing mm_fp4 looked about 1.3 to 1.4 times slower at M=1. Part of that was our own harness, which
+  recomputed mm_fp4's scale factor inside every timed call (two extra small kernels). With that moved out, one re-run on gx10
+  gave mm_fp4 48.2 µs against marlin 39.2 µs (a ratio of 1.23), and a profiler showed the GEMM kernel alone at 47.0 µs against
+  marlin's 39.7 µs; the same re-run on gx11 is still to be repeated. We found the launch-overhead problem by accident, because
+  a second timing loop disagreed with the first. We now suggest checking any timing with a second, independent method (graph replay or a
   profiler's kernel duration) and treating a disagreement as a finding.
 - **Correction: the bandwidth "wall" is not a ceiling for read-heavy kernels.** 9.45 MB in the graph-timed 37.8 µs for marlin is
   about 250 GB/s, above the 220 GB/s triad figure used for "% of wall" here and elsewhere in these notes, and about equal to a
@@ -81,7 +84,8 @@ protocol we settled on (2026-06-06; we compared three methods and rotation looke
   triad figure, including the 85% above, should not be used.
 - **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method, and from a timing method that includes
   launch cost. In a batch-size sweep (M = 1 to 512, 4096², graph-timed, one session per box) marlin had the lowest time per
-  token up to M = 64 and mm_fp4 from M = 96 up, on both boxes. Our two naive custom kernels were not ahead in any band we
+  token up to M = 64 and mm_fp4 from M = 96 up, on both boxes. A second session and two other shapes (4096x12288 and
+  12288x4096) showed the same pattern, apart from the 12288x4096 shape at M = 128, where marlin was ahead on both boxes. Our two naive custom kernels were not ahead in any band we
   could reproduce, so we make no claim that they beat marlin or mm_fp4 anywhere. These are single sessions; the spread
   between boxes and sessions is larger than the within-run intervals. We guess (untested) that the custom kernels are
   occupancy-bound at small M. Any cross-kernel head-to-head should use identical rotation+median on both sides (we think),
