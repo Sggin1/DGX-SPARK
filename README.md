@@ -4,7 +4,7 @@ DGX Spark research and tests — containers, benchmarks, and investigation notes
 
 Entries address compatibility issues with CUDA 13.x, aarch64, and SM121 that aren't covered by upstream containers or documentation. Each folder is a self-contained topic; dates and environment details live inside each folder's README.
 
-**How to read this repo.** Everything here is what we saw in our own tests, on our own hardware, on the dates given. Words like "verified" or "confirmed" mean "we ran it and observed this, once or a few times", not that it is proven or general. Samples are small and some raw data was not kept. Treat results as leads to check on your own setup.
+**Scope of the results.** Results in this repository come from the author's own measurements on their own hardware, on the dates given. Terms such as "verified" or "confirmed" mean the result was reproduced in the stated runs (often once or a few times); they do not mean independently confirmed or general. Sample sizes are small and some raw data was not kept, so treat the figures as leads to check on your own setup.
 
 ## Contents
 
@@ -97,9 +97,13 @@ Stamp driver · CUDA · image tag · model ID on any new measurement.
 
 ## Status
 
-This is work on a single hardware configuration mostly. Results may not generalize to other setups. The TurboQuant container patches an unmerged vLLM PR — the API may change. Sharing what worked in case it helps others with similar hardware.
+This is work on a single hardware configuration mostly. Results may not generalize to other setups. The TurboQuant container applies the patch from vLLM PR #38479 as it stood when tested; GitHub lists that PR as merged (checked 2026-10-24), and the merged version may differ from the tested patch. Sharing what worked in case it helps others with similar hardware.
 
 Related: [llm-latent-bridge-negative-results](https://github.com/Sggin1/llm-latent-bridge-negative-results) — negative results on bridging LLM hidden states at shallow layers, measured on this hardware.
+
+## License and credits
+
+Original text, code and measurements in this repository are released under the MIT License (see `LICENSE`). Some included files are third-party material under their own licenses (Apache-2.0 for the TurboQuant files taken from vLLM PR #38479, AGPL-3.0 for the patch against Atlas), and several folders are based on, or captured from, other projects and public leaderboards. `NOTICE.md` lists them with sources and licenses.
 
 ## Acknowledgments
 
