@@ -52,6 +52,7 @@ class FlightRecorder:
         self._t0 = None
         self._diag = {}
         self._quiesce = None
+        self._work = None
 
     def __enter__(self):
         self.out.mkdir(parents=True, exist_ok=True)
@@ -80,6 +81,13 @@ class FlightRecorder:
         self._thread.join(timeout=2.0)
         self._flush()
         return False
+
+    def set_work(self, units, unit="tokens"):
+        """Record how much work the run did (e.g. tokens, frames); stamped into header.json.
+
+        Raw data only: the report layer derives work-per-joule from it.
+        """
+        self._work = {"units": units, "unit": unit}
 
     @contextmanager
     def phase(self, name):
@@ -154,6 +162,8 @@ class FlightRecorder:
         header["recorder"] = self._diag
         if self._quiesce is not None:
             header["quiescence"] = self._quiesce
+        if self._work is not None:
+            header["work"] = self._work
         (self.out / "header.json").write_text(
             json.dumps(header, indent=2), encoding="utf-8")
 

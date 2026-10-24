@@ -42,3 +42,10 @@ def test_quiescence_swallows_sampler_failure(monkeypatch):
     rec = FlightRecorder("/tmp/unused", quiesce_window=1.0)
     # a failed pre-flight sample must not crash the run — it just goes unstamped
     assert rec._sample_quiescence() is None
+
+
+def test_set_work_is_stored_for_the_header():
+    rec = FlightRecorder("/tmp/unused")
+    assert rec._work is None
+    rec.set_work(128, "frames")
+    assert rec._work == {"units": 128, "unit": "frames"}
