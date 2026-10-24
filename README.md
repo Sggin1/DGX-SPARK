@@ -8,6 +8,21 @@ Entries address compatibility issues with CUDA 13.x, aarch64, and SM121 that are
 
 ## Contents
 
+At a glance (details, dates and scope are in each folder):
+
+| Folder | Topic | Type of content |
+| --- | --- | --- |
+| [`nvfp4/`](nvfp4/) | NVFP4 on GB10 | notes and measurements |
+| [`turboquant/`](turboquant/) | 3-bit KV cache compression test | measurements (single runs) |
+| [`mamba-dev/`](mamba-dev/) | mamba-ssm build for aarch64 | container build |
+| [`nemo3-super-gguf/`](nemo3-super-gguf/) | Nemotron-3-Super via llama.cpp on sm_121 | build recipe and measurements |
+| [`dual-spark/`](dual-spark/) | pairing two GX10 over one CX-7 cable | runbook |
+| [`atlas/`](atlas/) | Atlas engine vs vLLM | benchmark (one host) |
+| [`fp4_SASS/`](fp4_SASS/) | which FP4 tensor-core paths work on sm_121a | compiler and SASS evidence |
+| [`comfyui_spark_notes/`](comfyui_spark_notes/) | ComfyUI wheel-shadowing | observations on one install |
+| [`recipes/`](recipes/) | serving launch files | reference (community and local) |
+| [`flightrec/`](flightrec/) | run validity, memory guard, monitoring | tool |
+
 ### 1. [nvfp4/](nvfp4/) — NVFP4 on DGX Spark (friction → working)
 
 Single top-level home for the NVFP4 story on GB10 (only `nv*` topic folder). March 2026 memory-floor campaign (19 GB model, 50–120 GB → ~32 GB @ ~50 tok/s), then the **software + driver/OS catch-up** that made stock upstream viable. Former trees `nvfp4-guide/`, `nvfp4-landscape/`, `nvfp4-memory/` live under this folder (`guide.md`, `memory.md`, `archive/`).
@@ -21,9 +36,10 @@ Single top-level home for the NVFP4 story on GB10 (only `nv*` topic folder). Mar
 
 Patches vLLM with TurboQuant KV cache compression ([PR #38479](https://github.com/vllm-project/vllm/pull/38479)). Builds on the NVFP4 stack — same model family, compressed KV cache.
 
-- 240K token context at 64 GB memory, zero memory creep
-- Faster than fp8 at long context (7.4 vs 5.0 tok/s at 64K)
-- Needle-in-haystack recall tested across 1K–240K tokens
+- 240K-token context fits at 64 GB; no memory creep seen over 8 sequential queries in one server session (not a long-running soak test)
+- 7.4 vs 5.0 tok/s (TQ3 vs FP8) at 64K context; each context length measured once, so small differences are within noise
+- Needle-in-haystack recall tested across 1K–240K tokens (the 240K run is a capacity result at 1.8 tok/s, not a speed result)
+- Naming: the tested patch adds `tq3` and `tq4` cache dtypes; the title of the merged upstream PR describes 2-bit compression, so the variant in the merged version may differ from the one tested here
 - Based on [eugr/spark-vllm-docker](https://github.com/eugr/spark-vllm-docker) with prebuilt SM121 FlashInfer
 
 ### 3. [mamba-dev/](mamba-dev/) — mamba-ssm for aarch64
@@ -52,11 +68,11 @@ Field-tested runbook for pairing two NVIDIA DGX Sparks (ASUS Ascent GX10) over a
 
 ### 6. [atlas/](atlas/) — Atlas Inference Engine: head-to-head vs vLLM
 
-Single-host benchmark of [Atlas](https://github.com/Avarok-Cybersecurity/atlas), a pure Rust+CUDA inference engine for GB10. Reproduced their published `~88 tok/s` Nemotron-3-Nano-30B-A3B-NVFP4 number (88.34 max, 84.36 median, c=1). Same model, same prompts: Atlas single-stream beats vLLM by +63%, vLLM wins concurrency at c=4 (continuous batching). Atlas cold-start with cached weights: 20s vs vLLM 171s (8.5×). Includes reproducer (`bench.py`), raw JSON results, and the `serve --help` flag dump.
+Single-host benchmark of [Atlas](https://github.com/Avarok-Cybersecurity/atlas), a pure Rust+CUDA inference engine for GB10. Measured 2026-05-07 on one ASUS Ascent GX10, same model and prompts for both engines. The `~88 tok/s` figure published for Nemotron-3-Nano-30B-A3B-NVFP4 was reproduced (88.34 max, 84.36 median, c=1). Single-stream (c=1, 9 runs each): Atlas median +62.7% over vLLM. At c=4 (9 runs each): vLLM aggregate +53% over Atlas, consistent with continuous batching. Cold start with cached weights, as measured: 20 s (Atlas) vs 171 s (vLLM). Includes reproducer (`bench.py`), raw JSON results, and the `serve --help` flag dump.
 
-### 7. [fp4_SASS/](fp4_SASS/) — FP4 on GB10: silicon vs marketing
+### 7. [fp4_SASS/](fp4_SASS/) — FP4 on GB10: which tensor-core paths work
 
-Evidence-first probe of what FP4 tensor-core paths actually work on `sm_121a`. NVIDIA's own `ptxas` refuses `tcgen05.mma` for `sm_121a` — the "1 PFLOP FP4" pipe is a silicon gap on GB10, not a software switch. Consumer warp-level FP4 (`mma.sync.aligned.kind::mxf4.block_scale...`) compiles cleanly and emits the same SASS opcode (`OMMA.SF.16864.F32.E2M1.E2M1.E8`) as the RTX 5060 Ti (`sm_120a`) — Spark and the 5060 Ti share the consumer-Blackwell FP4 silicon at the instruction level.
+Evidence-first probe of what FP4 tensor-core paths actually work on `sm_121a`. In our testing, NVIDIA's own `ptxas` refuses `tcgen05.mma` for `sm_121a`, which looks like a silicon-level gap on GB10 rather than a software setting (evidence trail in `findings.md`). Consumer warp-level FP4 (`mma.sync.aligned.kind::mxf4.block_scale...`) compiles cleanly and emits the same SASS opcode (`OMMA.SF.16864.F32.E2M1.E2M1.E8`) as the RTX 5060 Ti (`sm_120a`) — Spark and the 5060 Ti share the consumer-Blackwell FP4 silicon at the instruction level.
 
 - `findings.md` — full evidence trail with PTX/SASS citations
 - `kernel-patterns.md` — patterns for integrating custom low-bit formats with consumer-Blackwell FP4, distilled from llama.cpp MMQ
@@ -74,14 +90,19 @@ Two real pip-shadowing risks observed while running ComfyUI on Spark with the [T
 
 ### 9. [recipes/](recipes/) — Serving launch YAMLs (Spark Arena + our boxes)
 
-Spark Arena + local measured recipes (NVFP4 and related). Living “run this” counterpart to [`nvfp4/`](nvfp4/).
+Spark Arena + local measured recipes (NVFP4 and related). Living “run this” counterpart to [`nvfp4/`](nvfp4/). The Spark Arena recipes are the submitters' work, captured 2026-06-05 from the public leaderboard; sources and licenses are listed in [`NOTICE.md`](NOTICE.md) (added in the license PR).
 
-### 10. [flightrec/](flightrec/) — GB10 benchmark flight recorder
+### 10. [flightrec/](flightrec/) — GB10 flight recorder: run validity, memory guard and monitoring
 
-Always-on Tier-1 machine-state recorder for Spark benches: GPU power/clock/throttle/energy, CPU, and memory pressure on one timeline. Invalidates throttled runs; includes `mem_guard` (OOM / mem-pressure backstop), `smoke` / `watch` / `live` monitoring arms, adaptive-N sampling and gates.
+Machine-state recorder and safety tooling for DGX Spark (GB10) work, built around repeated out-of-memory freezes and throttled runs polluting results.
+
+- **Run record and validity:** wraps a benchmark or job and stores GPU power, clock, throttle state and energy, CPU load and memory pressure on one timeline. Runs that throttled are marked invalid so they are not mixed into results.
+- **Memory guard (`mem_guard`):** opt-in polling daemon that watches `MemAvailable` on the unified-memory pool and warns, then ends runaway model or compute processes, before an out-of-memory condition freezes the machine. A systemd unit is provided. Thresholds are set per machine and need tuning; too tight a setting can end a job that would have finished.
+- **Monitoring:** `smoke` (short pre-flight scan), `watch` (stall detection), `live` (throttle alarm).
+- **Statistics:** adaptive-N sampling and gates for benchmark results.
 
 - Install: `uv pip install -e ".[dev]"` from `flightrec/`
-- Primary target: DGX Spark (GB10); useful for OOM and power-path throttle triage
+- Primary target: DGX Spark (GB10); used here for OOM and power-path throttle triage
 - Protocols: [`flightrec/PROTOCOLS.md`](flightrec/PROTOCOLS.md)
 
 ## Hardware
