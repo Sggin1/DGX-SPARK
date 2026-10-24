@@ -72,7 +72,9 @@ Example unit file: [`systemd/flightrec-memguard.service`](systemd/flightrec-memg
 |---|---|---|
 | `record` | wrap a command → artifact | `--out` *(req)*, `--hz`(20), `--parse-tokens-re`, `--work-units`, `--work-unit` |
 | `report` | provenance + validity + rollup + phase tree | positional `run_dir` |
-| `kernel-events` | list GPU/driver-related kernel log lines (read-only) | `--since`, `--until`, `--boot`, `--all-boots`, `--json`, `--max-lines`(50) |
+| `kernel-events` | list GPU/driver-related kernel log lines (read-only) | `--since`, `--until`, `--boot`, `--all-boots`, `--json`, `--max-lines`(50), `--guard` |
+| `platform` | print a read-only platform snapshot | `--json` |
+| `platform-diff` | show only the fields that differ between two snapshots | positional `A B` |
 | `measure` | validity-gated utilization vector | `--bytes`, `--flops`(0), `--tokens` |
 | `aggregate` | N-run median/IQR/CV% + bootstrap CI (drops INVALID) | `--metric`(kernel_s), … |
 | `sample` | adaptive-N until CI half-width &lt; target | `--out-prefix` *(req)*, `--cmd …`, `--until-ci`(3.0) |
@@ -185,16 +187,44 @@ What we saw: one line, `NVRM: refcntRequestReference_IMPL: Failed to enter state
 
 ---
 
+## Platform snapshot
+
+```bash
+flightrec platform --json > before.json     # after a firmware/OS update: > after.json
+flightrec platform-diff before.json after.json
+```
+
+Firmware or OS updates may change usable memory or add monitoring features, and we would like each run to record enough to see that afterwards. `record` stores a `platform` entry in `header.json`; `flightrec platform` prints the same thing for the current machine. It is raw values, each read on its own (an unreadable field is `null` and the others are unaffected), with no sudo: kernel release (`/proc/sys/kernel/osrelease`), BIOS version, date and product name (`/sys/class/dmi/id/`), `MemTotal`, `MemAvailable`, `CmaTotal` and `HugePages_Total` (`/proc/meminfo`), the kernel's boot line `Memory: <avail>K/<total>K available (... reserved, ... cma-reserved)` from `journalctl -k -b 0` (raw line plus the parsed numbers), the first kernel-log line containing `mpam:`, whether `/sys/fs/resctrl` exists, the sorted names under `/sys/bus/event_source/devices`, and the NVIDIA kernel module version from `/proc/driver/nvidia/version`. Hostnames, usernames, serial numbers and UUIDs are not read. If the journal is not readable, the boot-log fields are `null` and `kernel_log_error` says why.
+
+`report` prints a short `platform:` block (kernel, BIOS, MemTotal, boot reserved kB, the MPAM line or "none seen", resctrl yes/no, number of perf devices). `platform-diff A B` takes two `header.json` files or two `flightrec platform --json` files and prints only the fields whose values differ, or `no differences`. It reports that values differ, not why. Artifacts recorded before this field existed print no platform block, and `platform-diff` says they have no snapshot.
+
+---
+
+## Memory guard in the run report
+
+```bash
+flightrec kernel-events --since "2 days ago" --guard
+```
+
+`flightrec-memguard` (`flightrec.mem_guard`) can terminate processes. So that a cutoff is visible next to the run it happened during, `record` reads `journalctl -u flightrec-memguard` for the run window when the command finishes. `report` prints `memory guard during the run: none`, `N events`, or `could not read (reason)`, followed by the first few lines; `header.json` gets a `memguard` entry (status, reason, count, window) and any lines go to `memguard_events.json`. `kernel-events --guard` lists the same lines for the `--since`/`--until`/`--boot` range you give it.
+
+Only these shapes, as `mem_guard.py` prints them, are kept: `WARN used=...`, `BREACH avail=...`, `SIGKILL <pid>: <command line>` and `docker stop <id> (<name>)`. Start-up (`guard up: ...`) and systemd start/stop lines are ignored. Guard events are only listed: they do not make a run invalid, and nothing here changes, signals or configures the guard. The `SIGKILL` line carries the killed command line as the guard printed it, so it can contain paths or arguments; check it before sharing an artifact.
+
+What to keep in mind: `mem_guard.py` writes its messages to the file given by `--log` (default `/tmp/flightrec_memguard.log`), and the example unit in `systemd/` does not pass `--log`. We have not verified that those lines reach the journal on any particular install, so "none" here can mean "nothing was logged to the journal" and not "the guard did nothing". The unit would need to send its output to the journal for this section to see events.
+
+---
+
 ## Artifact layout
 
 Each `--out` directory is self-describing:
 
 | file | contents |
 |---|---|
-| `header.json` | driver, GPU name, clock ceiling, BW wall source, recorder overhead |
+| `header.json` | driver, GPU name, clock ceiling, BW wall source, recorder overhead, `platform` snapshot, `memguard` status |
 | `samples.parquet` | per-tick GPU/CPU/mem/PSI timeline |
 | `phases.parquet` | nested phase marks (if used) |
 | `kernel_events.json` | matching kernel log lines for the run window (only if any matched) |
+| `memguard_events.json` | memory-guard warn/kill lines for the run window (only if any matched) |
 
 ---
 

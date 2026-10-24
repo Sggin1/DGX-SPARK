@@ -19,6 +19,7 @@ import json
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 from flightrec.recorder import FlightRecorder
 from flightrec.report import summarize_run
@@ -34,7 +35,7 @@ from flightrec.smoke import smoke, format_card
 from flightrec.watch import watch, format_result
 from flightrec.live import live
 from flightrec import quiesce
-from flightrec import kernel_events
+from flightrec import kernel_events, memguard_events, platform_snapshot
 from flightrec.model_bytes import from_config_file
 from flightrec.compute_cal import calibrate_compute, compute_peak_for
 
@@ -59,6 +60,8 @@ def main(argv=None):
         "quiesce": _do_quiesce,
         "model-bytes": _do_model_bytes,
         "kernel-events": _do_kernel_events,
+        "platform": _do_platform,
+        "platform-diff": _do_platform_diff,
     }.get(args.cmd)
     if handler is None:
         parser.print_help()
@@ -114,6 +117,7 @@ def _build_parser():
     rep = sub.add_parser("report", help="summarize a recorded artifact")
     rep.add_argument("run_dir")
     _add_kernel_events_parser(sub)
+    _add_platform_parsers(sub)
     cmp_p = sub.add_parser(
         "compare",
         help="hardware diff of two artifacts, OR cross-box replication verdict with --replicate-with",
@@ -536,6 +540,11 @@ def _add_kernel_events_parser(sub):
     )
     ke.add_argument("--json", action="store_true", help="print events + summary as JSON")
     ke.add_argument(
+        "--guard",
+        action="store_true",
+        help="also list flightrec-memguard warn/kill lines for the same time range",
+    )
+    ke.add_argument(
         "--max-lines",
         type=int,
         default=50,
@@ -551,11 +560,73 @@ def _do_kernel_events(args):
         events, reason = kernel_events.scan(args.since, args.until, args.boot)
         failed = [(args.boot or 0, reason)] if reason else []
     summary = kernel_events.summarize(events)
+    guard = None
+    if args.guard:
+        guard = memguard_events.scan(args.since, args.until, args.boot)
     if args.json:
         bad = [{"boot": b, "reason": r} for b, r in failed]
-        print(json.dumps({"summary": summary, "unreadable": bad, "events": events}, indent=2))
+        data = {"summary": summary, "unreadable": bad, "events": events}
+        if guard:
+            data["memguard"] = {"events": guard[0], "unreadable": guard[1]}
+        print(json.dumps(data, indent=2))
     else:
         print(_format_kernel_events(events, summary, failed, args))
+        if guard:
+            print(_format_memguard(guard[0], guard[1], args))
+    return 0
+
+
+def _format_memguard(events, reason, args):
+    if reason:
+        return f"memory guard: could not read ({reason})"
+    out = [f"memory guard: {len(events)} events (listed only)" if events else "memory guard: none"]
+    out += [f"{e['time']} [{e['category']}] {e['line']}" for e in events[: max(0, args.max_lines)]]
+    return "\n".join(out)
+
+
+def _add_platform_parsers(sub):
+    plat = sub.add_parser("platform", help="print a read-only platform snapshot (kernel, BIOS, memory)")
+    plat.add_argument("--json", action="store_true", help="print the snapshot as JSON")
+    diff = sub.add_parser(
+        "platform-diff",
+        help="show the fields that differ between two header.json or `platform --json` files",
+    )
+    diff.add_argument("a")
+    diff.add_argument("b")
+
+
+def _do_platform(args):
+    snap = platform_snapshot.snapshot()
+    if args.json:
+        print(json.dumps(snap, indent=2))
+    else:
+        for key, value in snap.items():
+            print(f"{key}: {value}")
+    return 0
+
+
+def _load_platform(path):
+    """Snapshot dict from a header.json (its ``platform`` entry) or a snapshot file."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if "platform" in data or "gpu_name" in data or "recorder" in data:
+        return data.get("platform")  # a header.json; None for older artifacts
+    return data
+
+
+def _do_platform_diff(args):
+    try:
+        a, b = _load_platform(args.a), _load_platform(args.b)
+    except (OSError, ValueError) as exc:
+        print(f"[flightrec] could not read snapshot: {exc}")
+        return 1
+    if not a or not b:
+        print("[flightrec] no platform snapshot in " + (args.a if not a else args.b))
+        return 1
+    changes = platform_snapshot.diff(a, b)
+    for key, (left, right) in changes.items():
+        print(f"{key}: {left} -> {right}")
+    if not changes:
+        print("no differences")
     return 0
 
 

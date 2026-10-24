@@ -40,6 +40,9 @@ def summarize_run(run_dir):
     scoped = active if len(active) else samples
     result = verdict(scoped)
     print(_fmt_header(header))
+    platform = _fmt_platform(header)
+    if platform:
+        print(platform)
     print(_fmt_verdict(result, scoped=len(active) > 0))
     print(_fmt_rollup(scoped))
     efficiency = _fmt_work_per_joule(work_per_joule(header, scoped, result))
@@ -48,6 +51,9 @@ def summarize_run(run_dir):
     kernel = _fmt_kernel_events(header, _load_kernel_events(run_dir))
     if kernel:
         print(kernel)
+    guard = _fmt_memguard(header, _load_json_list(run_dir, "memguard_events.json"))
+    if guard:
+        print(guard)
     tree = build_tree(phases, samples)
     if tree:
         print("\nphase tree (duration · energy · mean clock):\n" + format_tree(tree))
@@ -121,6 +127,48 @@ def _fmt_kernel_events(header, events, show=5):
     if len(events) > show:
         lines.append(f"  ... {len(events) - show} more in kernel_events.json")
     return "\n".join(lines)
+
+
+def _load_json_list(run_dir, name):
+    """A stored event list, or [] when absent or unreadable."""
+    try:
+        return json.loads((Path(run_dir) / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def _fmt_memguard(header, events, show=5):
+    """Memory-guard section (events only listed); "" for artifacts without ``memguard``."""
+    info = header.get("memguard")
+    if not info:
+        return ""
+    head = "\nmemory guard during the run: "
+    if info.get("status") != "ok":
+        return head + f"could not read ({info.get('reason') or 'unknown reason'})"
+    if not info.get("count"):
+        return head + "none"
+    lines = [head + f"{info['count']} events (listed only; the run is not marked invalid)"]
+    lines += [f"  {e['time']} [{e['category']}] {e['line']}" for e in events[:show]]
+    if len(events) > show:
+        lines.append(f"  ... {len(events) - show} more in memguard_events.json")
+    return "\n".join(lines)
+
+
+def _fmt_platform(header):
+    """Compact platform block; "" for artifacts recorded before the snapshot existed."""
+    p = header.get("platform")
+    if not p:
+        return ""
+    boot = p.get("boot_memory") or {}
+    devices = p.get("perf_devices")
+    return "\n".join([
+        "\nplatform:",
+        f"  kernel {p.get('kernel_release')} | BIOS {p.get('bios_version')} ({p.get('bios_date')})",
+        f"  MemTotal {p.get('mem_total_kb')} kB | boot reserved {boot.get('reserved_k')} kB",
+        f"  MPAM: {p.get('mpam_line') or 'none seen'}",
+        f"  resctrl {'yes' if p.get('resctrl_present') else 'no'} | "
+        f"perf devices {len(devices) if devices is not None else 'unknown'}",
+    ])
 
 
 def _fmt_header(h):

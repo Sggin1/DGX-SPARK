@@ -30,7 +30,7 @@ import pandas as pd
 from flightrec.sample_gpu import open_gpu, gpu_fast, gpu_energy, gpu_util
 from flightrec.sample_cpu import read_stat, cpu_busy, cpu_freq_mhz, mem_sample, psi_sample
 from flightrec.header import capture_header
-from flightrec import kernel_events
+from flightrec import kernel_events, memguard_events, platform_snapshot
 
 _RAW = time.CLOCK_MONOTONIC_RAW
 _CPU = time.CLOCK_THREAD_CPUTIME_ID  # the sampler thread's own CPU time (self-overhead)
@@ -170,6 +170,9 @@ class FlightRecorder:
             header["work"] = self._work
         header["kernel_events"] = kernel_events.capture_for_run(
             self.out, self._wall[0], self._wall[1])
+        header["memguard"] = memguard_events.capture_for_run(
+            self.out, self._wall[0], self._wall[1])
+        header["platform"] = _safe(platform_snapshot.snapshot) or None
         (self.out / "header.json").write_text(
             json.dumps(header, indent=2), encoding="utf-8")
 
