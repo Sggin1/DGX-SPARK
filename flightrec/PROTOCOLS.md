@@ -67,7 +67,7 @@ protocol we settled on (2026-06-06; we compared three methods and rotation looke
   single weight in a loop; the 256 MB flush read about **87 to 90 µs**, about 1.8 times the rotation figure. The earlier note
   that flush was *noisier* was **not** reproduced (its spread was about as tight as rotation's). Why flush reads slower is
   untested; one guess is that the 256 MB write leaves dirty lines being written back during the timed call.
-- **Correction (2026-10-23): the timings above include launch overhead.** They put CUDA events around one Python call, so each
+- **Review update (2026-10-23): the timings above include launch overhead.** They put CUDA events around one Python call, so each
   number contains the cost of launching it. Re-timing with CUDA-graph replay (M=1, rotation over 8 weights, n = 200, one session
   per box) gave, in µs on gx10 / gx11: marlin 37.8 / 39.7, mm_fp4 53.1 / 51.3, a naive single-buffered custom kernel
   125.8 / 103.8. The launch overhead was about 9 µs for marlin and about 45 µs for mm_fp4, so event timing overstated mm_fp4 the
@@ -78,7 +78,7 @@ protocol we settled on (2026-06-06; we compared three methods and rotation looke
   marlin's 39.7 µs; the same re-run on gx11 is still to be repeated. We found the launch-overhead problem by accident, because
   a second timing loop disagreed with the first. We now suggest checking any timing with a second, independent method (graph replay or a
   profiler's kernel duration) and treating a disagreement as a finding.
-- **Correction: the bandwidth "wall" is not a ceiling for read-heavy kernels.** 9.45 MB in the graph-timed 37.8 µs for marlin is
+- **Review update: the bandwidth "wall" is not a ceiling for read-heavy kernels.** 9.45 MB in the graph-timed 37.8 µs for marlin is
   about 250 GB/s, above the 220 GB/s triad figure used for "% of wall" here and elsewhere in these notes, and about equal to a
   read-only sum reduction measured at 247 GB/s (best of 50, fp32, one session on gx10). Percentages computed against the
   triad figure, including the 85% above, should not be used.
