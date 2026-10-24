@@ -22,7 +22,7 @@ At a glance (details, dates and scope are in each folder):
 | [`atlas/`](atlas/) | Atlas engine vs vLLM | benchmark (one host) |
 | [`fp4_SASS/`](fp4_SASS/) | which FP4 tensor-core paths work on sm_121a | compiler and SASS evidence |
 | [`comfyui_spark_notes/`](comfyui_spark_notes/) | ComfyUI wheel-shadowing | observations on one install |
-| [`recipes/`](recipes/) | serving launch files | reference (community and local) |
+| [`recipes/`](recipes/) | serving launch files | links to community recipes, local measurements |
 | [`flightrec/`](flightrec/) | run validity, memory guard, monitoring | tool |
 
 ### 1. [nvfp4/](nvfp4/) — NVFP4 on DGX Spark (friction → working)
@@ -80,7 +80,7 @@ Field-tested runbook for pairing two NVIDIA DGX Sparks (ASUS Ascent GX10) over a
 
 ### 6. [atlas/](atlas/) — Atlas Inference Engine: head-to-head vs vLLM
 
-**Tested:** 2026-05-07. Driver 580.142, CUDA 13.0; engine and image versions as listed in the folder.
+**Tested:** 2026-05-07. Driver 580.142, CUDA 13.0; engine and image versions as listed in the folder. Historical snapshot: upstream Atlas has had releases since (for example b470 on 2026-09-24), so these figures may no longer apply; current status is on the [Atlas releases page](https://github.com/Avarok-Cybersecurity/atlas/releases).
 
 Single-host benchmark of [Atlas](https://github.com/Avarok-Cybersecurity/atlas), a pure Rust+CUDA inference engine for GB10. Measured 2026-05-07 on one ASUS Ascent GX10, same model and prompts for both engines. The `~88 tok/s` figure published for Nemotron-3-Nano-30B-A3B-NVFP4 was reproduced (88.34 max, 84.36 median, c=1). Single-stream (c=1, 9 runs each): Atlas median +62.7% over vLLM. At c=4 (9 runs each): vLLM aggregate +53% over Atlas, consistent with continuous batching. Cold start with cached weights, as measured: 20 s (Atlas) vs 171 s (vLLM). Includes reproducer (`bench.py`), raw JSON results, and the `serve --help` flag dump.
 
@@ -108,9 +108,9 @@ Two real pip-shadowing risks observed while running ComfyUI on Spark with the [T
 
 ### 9. [recipes/](recipes/) — Serving launch YAMLs (Spark Arena + our boxes)
 
-**Dated:** leaderboard recipes captured 2026-06-05; local measurements 2026-06-06; vLLM v0.22.1 image. Leaderboard rankings and recipes change over time.
+**Dated:** leaderboard figures as listed 2026-06-05; local measurements 2026-06-06; vLLM v0.22.1 image. Leaderboard rankings and recipes change over time.
 
-Spark Arena + local measured recipes (NVFP4 and related). Living “run this” counterpart to [`nvfp4/`](nvfp4/). The Spark Arena recipes are the submitters' work, captured 2026-06-05 from the public leaderboard; sources and licenses are listed in [`NOTICE.md`](NOTICE.md) (added in the license PR).
+Spark Arena + local measured recipes (NVFP4 and related). Living “run this” counterpart to [`nvfp4/`](nvfp4/). The leaderboard recipes are the submitters' work and are linked, not copied (rank and throughput quoted as listed on 2026-06-05); only our own measured recipes are in this folder.
 
 ### 10. [flightrec/](flightrec/) — GB10 flight recorder: run validity, memory guard and monitoring
 
@@ -146,7 +146,7 @@ Related: [llm-latent-bridge-negative-results](https://github.com/Sggin1/llm-late
 
 ## License and credits
 
-Original text, code and measurements in this repository are released under the MIT License (see `LICENSE`). Some included files are third-party material under their own licenses (Apache-2.0 for the TurboQuant files taken from vLLM PR #38479, AGPL-3.0 for the patch against Atlas), and several folders are based on, or captured from, other projects and public leaderboards. `NOTICE.md` lists them with sources and licenses.
+Original text, code and measurements in this repository are released under the MIT License (see `LICENSE`). Some included files are third-party material under their own licenses (Apache-2.0 for the TurboQuant files taken from vLLM PR #38479, AGPL-3.0 for the Atlas research folder, as its own README states), and several folders are based on other projects, and some link to public leaderboards. `NOTICE.md` lists them with sources and licenses.
 
 ## Acknowledgments
 

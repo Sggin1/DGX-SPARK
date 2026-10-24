@@ -2,7 +2,7 @@
 
 Single-host benchmark of the [Atlas inference engine](https://github.com/Avarok-Cybersecurity/atlas) on an ASUS Ascent GX10 (NVIDIA GB10 / DGX Spark class), with vLLM A/B on the same model + prompt set for context.
 
-Date: 2026-05-07.
+Date: 2026-05-07. Status: historical snapshot. Upstream Atlas has had releases since (for example b470 on 2026-09-24), so these figures may no longer apply; current status is on the [Atlas releases page](https://github.com/Avarok-Cybersecurity/atlas/releases).
 
 ---
 
