@@ -31,7 +31,7 @@ def capture_header(gpu_index=0):
         "sm_clock_max_mhz": _safe(pynvml.nvmlDeviceGetMaxClockInfo, handle, _SM),
         "power_now_w": _power(handle),
         "cntvct_offset_note": "nsys systemClockNs == CNTVCT_EL0, leads MONOTONIC_RAW "
-                              "by a fixed ~+19.32 s; re-measure per boot to align Tier-2.",
+                              "by a fixed ~+19.32 s; re-measure per boot to align profiler traces.",
         "caveats": "DRAM bandwidth has no GB10 HW counter; the wall is MEASURED "
                    "(STREAM-triad) when calibrated, else a modeled fallback. "
                    "Throttle bitmask unreliable; validity judged on clock+power drop.",
