@@ -1,6 +1,6 @@
 # flightrec — GB10 flight recorder: run validity, memory guard and monitoring
 
-Always-on, low-overhead **Tier-1** machine-state recorder for **NVIDIA DGX Spark (GB10 / sm_121a)**.
+Always-on, low-overhead machine-state telemetry for **NVIDIA DGX Spark (GB10 / sm_121a)** (earlier called "Tier-1" in these notes).
 
 Three parts:
 
@@ -164,7 +164,7 @@ Each `--out` directory is self-describing:
 - **Memory clock N/A** via NVML on this platform.
 - **No CPU/board power** on stock interfaces.
 
-Deeper measurement protocols (clean-room, Tier-2, etc.): [`PROTOCOLS.md`](PROTOCOLS.md).
+Deeper measurement protocols (clean-room, on-demand profiling, etc.): [`PROTOCOLS.md`](PROTOCOLS.md).
 
 ---
 

@@ -70,7 +70,7 @@ def console():
 
 
 def _build_parser():
-    parser = argparse.ArgumentParser(prog="flightrec", description="GB10 Tier-1 flight recorder")
+    parser = argparse.ArgumentParser(prog="flightrec", description="GB10 flight recorder")
     sub = parser.add_subparsers(dest="cmd")
     rec = sub.add_parser("record", help="record state while a command runs")
     rec.add_argument("--out", required=True)

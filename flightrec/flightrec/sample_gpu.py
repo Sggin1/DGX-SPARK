@@ -1,6 +1,6 @@
 # File: sample_gpu.py
 # Location: flightrec/sample_gpu.py
-# Purpose: Cheap unprivileged GPU-state readers for GB10 (NVML), Tier-1 only.
+# Purpose: Cheap unprivileged GPU-state readers for GB10 (NVML), for always-on telemetry only.
 # Dependencies: nvidia-ml-py (pynvml)
 
 """GB10 GPU signal readers verified to work on sm_121 (driver 580.159.03).

@@ -1,9 +1,9 @@
 # File: recorder.py
 # Location: flightrec/recorder.py
-# Purpose: Tier-1 always-on flight recorder; wraps a bench into a self-describing artifact.
+# Purpose: always-on telemetry flight recorder; wraps a bench into a self-describing artifact.
 # Dependencies: pandas, flightrec.sample_gpu, flightrec.sample_cpu, flightrec.header
 
-"""Tier-1 always-on flight recorder for GB10 benchmarks.
+"""Always-on telemetry flight recorder for GB10 benchmarks.
 
 Samples the broad, cheap machine state (GPU power/clock/throttle/energy, all 20
 CPU cores, pressure, memory) on one CLOCK_MONOTONIC_RAW timeline — a ~20 Hz fast

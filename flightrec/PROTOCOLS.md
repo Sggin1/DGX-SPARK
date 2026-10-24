@@ -86,13 +86,13 @@ app / config  →  CUDA kernel  →  driver / runtime  →  OS / kernel  →  fi
 Each step is a measurement, not an opinion. Stopping at the first plausible cause is how you "optimize"
 a kernel that was actually starved three layers down. The recorder is the sensor at every rung.
 
-## 6. Two tiers (by physics, not preference)
-- **Tier-1 (this tool, always-on, no privilege):** broad cheap state, every run, ~0.9% of one core.
+## 6. Two measurement levels (by physics, not preference)
+- **Always-on telemetry (this tool; earlier called Tier-1; no privilege):** broad cheap state, every run, about 3.4% of one core (measured; see the overhead section below).
   Records "every second" — but *not* "every cycle which cores": that needs profiling-grade tooling.
-- **Tier-2 (on-demand, sudo):** `nsys --gpu-metrics-set=gb20y` for SM/Tensor-active time-series; `ncu`
+- **On-demand profiling (earlier called Tier-2; sudo):** `nsys --gpu-metrics-set=gb20y` for SM/Tensor-active time-series; `ncu`
   for per-kernel roofline. Perturbing (counter multiplexing, kernel replay) — zoom in only where
-  Tier-1 flags a window. `nsys` `systemClockNs` == `CNTVCT_EL0`, which leads `CLOCK_MONOTONIC_RAW` by a
-  fixed ~+19.32 s; rebase by that offset to fuse Tier-2 traces onto the Tier-1 timeline.
+  the telemetry flags a window. `nsys` `systemClockNs` == `CNTVCT_EL0`, which leads `CLOCK_MONOTONIC_RAW` by a
+  fixed ~+19.32 s; rebase by that offset to fuse profiler traces onto the telemetry timeline.
 
 ## 7. Exploit both Sparks (the dual-box bonus)
 Two matched GB10s linked at ~200 Gb/s is a force-multiplier on rigor and throughput. Fabric setup:
@@ -185,26 +185,26 @@ the wrapper.
 - **Floors are tunable** (`--busy-floor 10%`, `--power-floor 25 W`, `--load-floor 0.5/core`; mirror the
   `watch` idle thresholds). Seen 2026-06-19: it flagged a contended box and passed a quiet one.
 
-## 11. Tier-2 kernel tree via nsys (correlate, don't re-instrument)
-- **The recorder already emits NVTX** (`rec.phase()` → `torch.cuda.nvtx.range_push/pop`), so the Tier-1
-  envelope and the Tier-2 per-kernel tree are the SAME phases — no new code, just the invocation:
+## 11. Kernel tree via nsys, on-demand profiling (correlate, don't re-instrument)
+- **The recorder already emits NVTX** (`rec.phase()` → `torch.cuda.nvtx.range_push/pop`), so the telemetry
+  envelope and the profiler's per-kernel tree are the SAME phases — no new code, just the invocation:
   ```
   nsys profile -t cuda,nvtx -o results/run01/trace \
       flightrec record --out results/run01 -- <bench ...>
   ```
   Open `trace.nsys-rep` in the Nsight Systems GUI: every CUDA kernel, duration, and warp occupancy shows
-  up *inside* the `decode`/`prefill` NVTX ranges you marked. Tier-1 gives the power/clock envelope; nsys
+  up *inside* the `decode`/`prefill` NVTX ranges you marked. The telemetry gives the power/clock envelope; nsys
   gives the kernel breakdown within it — the "program logic tree" path.
 - **Fuse the two timelines** with the §6 offset: nsys `systemClockNs` (== `CNTVCT_EL0`) leads
-  `CLOCK_MONOTONIC_RAW` by a fixed ~+19.32 s on this box; rebase by that to overlay a Tier-1 lane spike
-  onto the exact kernel that caused it. Zoom in only where Tier-1 flagged a window — nsys perturbs.
+  `CLOCK_MONOTONIC_RAW` by a fixed ~+19.32 s on this box; rebase by that to overlay a telemetry lane spike
+  onto the exact kernel that caused it. Zoom in only where the telemetry flagged a window — nsys perturbs.
 
 ## Overhead is a measured, controlled constant
-Tier-1's cost is uniform across runs, so it cancels in any A/B comparison (you only ever compare
+The telemetry's cost is uniform across runs, so it cancels in any A/B comparison (you only ever compare
 relative numbers). It is **measured, never claimed**: every run writes its own thread-CPU cost to
 `header.json` as `recorder.overhead_pct_of_core` (plus tick count, mean period, overrun %). On a reference GB10 it
 is **~3.4% of one Grace core** — *not* the "<1%" once asserted (that was ~8× off). The dominant cost was
 `nvmlDeviceGetTotalEnergyConsumption` at ~1.6 ms/call; because energy is a monotonic integral used only
 as a max-min delta, it moved to the ~6 Hz slow path for **zero information loss** and a 59% overhead cut
 (8.1% → 3.4%, reference GB10 2026-06-06). Leave it on for every run; turn it off for the final clean-room number
-and reclaim that fraction. Tier-2 is *not* uniform — that is why it stays on-demand.
+and reclaim that fraction. Profiling is *not* uniform — that is why it stays on-demand.

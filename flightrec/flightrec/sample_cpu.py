@@ -3,7 +3,7 @@
 # Purpose: Cheap unprivileged CPU/memory/pressure readers from /proc and sysfs.
 # Dependencies: none (stdlib only)
 
-"""Per-core CPU, memory, and pressure-stall readers for the Tier-1 recorder.
+"""Per-core CPU, memory, and pressure-stall readers for the always-on telemetry recorder.
 
 Answers the "only N cores active" question directly (per-core busy% + count).
 Frequency uses ``cpuinfo_avg_freq`` (CPPC delivered clock) — ``scaling_cur_freq``
