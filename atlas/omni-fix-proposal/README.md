@@ -4,6 +4,8 @@ Diagnosis and a tested patch enabling [Atlas](https://github.com/Avarok-Cybersec
 
 The underlying LLM is plain `nemotron_h` — same architecture Atlas already serves at ~88 tok/s on GB10 — but the upstream config wraps it as `llm_config` and prefixes every text-tensor with `language_model.`, which the existing parser and weight loader don't handle. Two small additions plus a refactor make this work without touching any kernel code.
 
+> Status: prepared against Atlas commit `9182c15` (May 2026) and not rechecked against the current upstream, which has had releases since (for example b470 on 2026-09-24): [releases](https://github.com/Avarok-Cybersecurity/atlas/releases).
+>
 > Atlas maintainers: take what you want from this. The patch is in `working-tree.diff`. If you'd prefer a formal PR with CLA, happy to file it — just let me know.
 
 ## What's here

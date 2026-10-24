@@ -1,7 +1,7 @@
-# DGX Spark serving recipes (captured from Spark Arena)
+# DGX Spark serving recipes (Spark Arena links, plus our own measurements)
 
-**Captured:** 2026-06-05 from the [Spark Arena leaderboard](https://spark-arena.com/leaderboard)
-(community DGX Spark benchmark, `recipeType: spark-vllm-docker`). These are recipes as listed on the leaderboard on that date; the numbers are the community's, not ours, unless a file says otherwise. They are
+**Reference snapshot, 2026-06-05,** from the [Spark Arena leaderboard](https://spark-arena.com/leaderboard)
+(community DGX Spark benchmark, `recipeType: spark-vllm-docker`). The recipes are the submitters' work and are linked from the leaderboard, not copied here; entries change, so use the live pages for current recipes. Rank, tok/s and configuration below are as listed on that date, and the numbers are the community's, not ours. They are
 launch recipes — the practical counterpart to the combined NVFP4 notes in
 [`../nvfp4/`](../nvfp4/) (friction → working narrative + dated `archive/`).
 
@@ -15,14 +15,14 @@ concurrencies re-rank the table — treat these as *a* slice, not an absolute or
 > [`eugr/spark-vllm-docker/recipes/`](https://github.com/eugr/spark-vllm-docker/tree/main/recipes)
 > (NVFP4 Qwen3.6 and the AutoRound/Omni variants are Arena submissions, not in that repo).
 
-## The four locked-in recipes
+## Four leaderboard entries (as listed 2026-06-05)
 
 | Rank | Model | Quant | tok/s | Container | Backend story |
 |:----:|-------|:-----:|:-----:|-----------|---------------|
-| [6](rank06-qwen3.6-35b-a3b-int4-autoround.yaml) | Intel/Qwen3.6-35B-A3B-int4-AutoRound | INT4 (gptq) | 131.36 | `vllm-node` | INT4 + DFlash spec-decode (k=8) |
-| [10](rank10-qwen3.6-35b-a3b-nvfp4.yaml) | RedHatAI/Qwen3.6-35B-A3B-NVFP4 | NVFP4 (compressed-tensors) | 111.92 | `vllm-node-tf5` | auto backend + DFlash (k=6), CUDA graphs ON |
-| [13](rank13-nemotron-3-nano-30b-a3b-nvfp4.yaml) | nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4 | NVFP4 (modelopt) | 104.74 | **official** `vllm/vllm-openai:v0.20.0-aarch64-cu130-ubuntu2404` | **FlashInfer MoE FP4 = 1** |
-| [22](rank22-nemotron-3-nano-omni-30b-a3b-nvfp4.yaml) | nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 | NVFP4 (multimodal) | 84.67 | **official** `vllm/vllm-openai:v0.20.0-aarch64-cu130-ubuntu2404` | **Marlin** (`--moe-backend marlin`, FP4 MoE = 0) |
+| 6 | Intel/Qwen3.6-35B-A3B-int4-AutoRound | INT4 (gptq) | 131.36 | `vllm-node` | INT4 + DFlash spec-decode (k=8) |
+| 10 | RedHatAI/Qwen3.6-35B-A3B-NVFP4 | NVFP4 (compressed-tensors) | 111.92 | `vllm-node-tf5` | auto backend + DFlash (k=6), CUDA graphs ON |
+| 13 | nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4 | NVFP4 (modelopt) | 104.74 | **official** `vllm/vllm-openai:v0.20.0-aarch64-cu130-ubuntu2404` | **FlashInfer MoE FP4 = 1** |
+| 22 | nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 | NVFP4 (multimodal) | 84.67 | **official** `vllm/vllm-openai:v0.20.0-aarch64-cu130-ubuntu2404` | **Marlin** (`--moe-backend marlin`, FP4 MoE = 0) |
 
 ## Measured locally (optimize project, single GB10) — not Arena scrapes
 
