@@ -19,7 +19,7 @@ JOURNAL = "\n".join([
     "2026-01-02T03:04:05+00:00 testhost kernel: " + REFCNT,
     "2026-01-02T03:04:06+00:00 testhost kernel: NVRM: Xid (PCI:000f:01:00): 79, fell off the bus",
     "2026-01-02T03:04:07+00:00 testhost kernel: audit: type=1400 msg=thermal oom NVRM:",
-    "2026-01-02T03:04:08+00:00 testhost kernel: CPU thermal throttling detected",
+    "2026-01-02T03:04:08+00:00 testhost kernel: CPU temperature above threshold",
     "2026-01-02T03:04:09+00:00 testhost kernel: Out of memory: Killed process 1 (python)",
     "2026-01-02T03:04:10+00:00 testhost kernel: INFO: task foo:1 blocked, hung task detected",
     "2026-01-02T03:04:11+00:00 testhost kernel: usb 1-1: new device",
@@ -185,3 +185,17 @@ def test_recorder_flush_stamps_kernel_events(monkeypatch, tmp_path):
     assert header["kernel_events"]["status"] == "ok"
     assert header["kernel_events"]["count"] == 5
     assert (tmp_path / "kernel_events.json").exists()
+
+
+def test_boot_time_registration_lines_are_skipped_and_driver_oom_has_its_own_category():
+    # lines seen on a healthy boot that earlier patterns counted as events
+    for quiet in ("thermal_sys: Registered thermal governor 'step_wise'",
+                  "acpi LNXTHERM:00: registered as thermal_zone0",
+                  "ACPI: thermal: Thermal Zone [TSOC] (34 C)",
+                  "NMI watchdog: Enabled. Permanently consumes one hw-PMU counter."):
+        assert ke.classify(quiet) is None
+    line = ("NVRM: nvCheckOkFailedNoLog: Check failed: Out of memory [NV_ERR_NO_MEMORY] (0x00000051) "
+            "returned from _memdescAllocInternal(pMemDesc) @ mem_desc.c:1")
+    assert ke.classify(line) == "nvrm_oom"
+    assert ke.classify("Out of memory: Killed process 123 (python)") == "oom"
+    assert ke.classify("INFO: task python:1 blocked for more than 120 seconds.") == "watchdog"

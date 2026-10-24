@@ -24,11 +24,17 @@ from collections import Counter
 # First match wins, so an "NVRM: Xid" line is nvrm_xid and not also nvrm.
 _RULES = [
     ("nvrm_xid", re.compile(r"NVRM: Xid", re.I)),
+    # driver-side allocation failure (seen on GB10 under memory pressure); kept apart from other NVRM lines
+    ("nvrm_oom", re.compile(r"NVRM:.*(NV_ERR_NO_MEMORY|out of memory)", re.I)),
     ("nvrm", re.compile(r"NVRM:", re.I)),
-    ("thermal", re.compile(r"thermal|overheat", re.I)),
+    # warning-like wording only: boot-time "Registered thermal governor" / "thermal zone registered" lines are skipped
+    ("thermal", re.compile(r"overheat|thermal (shutdown|trip|event)|critical temperature|"
+                           r"temperature.*(above|exceed|too high)|thermal.*(critical|trip point)", re.I)),
     ("throttle", re.compile(r"throttl|slowdown", re.I)),
-    ("oom", re.compile(r"out of memory|oom-kill", re.I)),
-    ("watchdog", re.compile(r"hung task|soft lockup|watchdog", re.I)),
+    ("oom", re.compile(r"out of memory|oom-kill|oom_reaper|invoked oom-killer", re.I)),
+    # lockups and stalls; boot-time "NMI watchdog: Enabled" style lines are skipped
+    ("watchdog", re.compile(r"hung task|soft lockup|hard lockup|blocked for more than|rcu.*stall|"
+                            r"watchdog.*(bug|detected|expired|timeout)", re.I)),
 ]
 _AUDIT = re.compile(r"^audit(\[\d+\])?:", re.I)
 # `-o short-iso`: "<time> <host> kernel: <message>"
