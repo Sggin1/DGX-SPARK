@@ -50,6 +50,7 @@ def _bandwidth_wall():
             "bandwidth_wall_source": f"measured ({cal.get('method')})",
             "bandwidth_wall_pct_of_spec": cal.get("pct_of_spec"),
             "bandwidth_wall_measured_unix": cal.get("measured_unix"),
+            "bandwidth_read_only_gbps": cal.get("read_only_gbps_measured"),
         }
     return {
         "bandwidth_wall_gbps": MODELED_WALL_GBPS,

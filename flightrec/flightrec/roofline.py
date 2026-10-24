@@ -69,6 +69,33 @@ print(json.dumps({{
 }}))
 """
 
+# Read-only streaming sum over a tensor far larger than the 25 MB L2; one JSON line out.
+# Unlike the triad it moves no write traffic, so read-heavy kernels can exceed the triad wall.
+_READ_PROGRAM = r"""
+import json, torch
+n = {n}
+reps = {reps}
+x = torch.randn(n, device="cuda", dtype=torch.float32)
+for _ in range(10):  # warmup
+    x.sum()
+torch.cuda.synchronize()
+start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+best_ms = float("inf")
+for _ in range(reps):
+    start.record()
+    x.sum()  # reads n elements, writes one scalar
+    end.record()
+    torch.cuda.synchronize()
+    best_ms = min(best_ms, start.elapsed_time(end))
+bytes_read = n * x.element_size()
+print(json.dumps({{
+    "read_only_gbps_measured": round(bytes_read / (best_ms / 1e3) / 1e9, 1),
+    "read_only_method": "read-only sum reduction, best-of-%d, fp32, CUDA-event timed" % reps,
+    "read_only_n_elements": n,
+    "read_only_best_kernel_ms": round(best_ms, 4),
+}}))
+"""
+
 
 def roofline_point(bytes_moved, flops, kernel_s, wall_gbps, peak_tflops=None):
     """Roofline coordinates for one measured kernel (pure data, no verdict).
@@ -224,9 +251,34 @@ def measure_bw_wall(python=None, n_elements=1 << 26, reps=50):
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
+def measure_read_bw(python=None, n_elements=1 << 28, reps=50):
+    """Run the read-only streaming sum in a torch python and return its JSON result.
+
+    Default 256Mi fp32 elements = 1 GiB read per rep (~40x the 25 MB L2). Same
+    interpreter lookup and failure behaviour as ``measure_bw_wall``.
+    """
+    interp = python or os.environ.get("FLIGHTREC_TORCH_PYTHON") or sys.executable
+    program = _READ_PROGRAM.format(n=n_elements, reps=reps)
+    proc = subprocess.run([interp, "-c", program], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"read-only BW measurement failed (needs a torch+CUDA python).\n{proc.stderr.strip()}"
+        )
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
 def calibrate(python=None, host=None, n_elements=1 << 26, reps=50):
-    """Measure the BW wall and persist it for this box; return the record."""
+    """Measure the BW wall (triad) plus a read-only BW and persist both for this box.
+
+    The triad mixes reads and writes, so read-heavy kernels can exceed it; the
+    read-only number is stored beside it and the triad keys are unchanged. If only
+    the read-only run fails, the triad calibration is still saved (``read_only_error``).
+    """
     record = measure_bw_wall(python=python, n_elements=n_elements, reps=reps)
+    try:
+        record.update(measure_read_bw(python=python, reps=reps))
+    except RuntimeError as exc:
+        record["read_only_error"] = str(exc).splitlines()[-1]
     record.update(
         {
             "host": host or socket.gethostname(),

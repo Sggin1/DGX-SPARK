@@ -42,10 +42,53 @@ def summarize_run(run_dir):
     print(_fmt_header(header))
     print(_fmt_verdict(result, scoped=len(active) > 0))
     print(_fmt_rollup(scoped))
+    efficiency = _fmt_work_per_joule(work_per_joule(header, scoped, result))
+    if efficiency:
+        print(efficiency)
     tree = build_tree(phases, samples)
     if tree:
         print("\nphase tree (duration · energy · mean clock):\n" + format_tree(tree))
     return result
+
+
+def work_per_joule(header, samples, result):
+    """Work units per joule over the sampled window, from the GPU energy counter.
+
+    ``header["work"]`` is the raw {units, unit} the run recorded; ``result`` is the
+    validity verdict for ``samples``. Returns None when the run recorded no work,
+    else a dict with ``status`` ok / invalid / no_energy and, only when ok,
+    work_per_j and j_per_work. No number is given for an invalid run or when the
+    energy counter is missing or did not advance.
+    """
+    work = header.get("work")
+    if not work or not work.get("units"):
+        return None
+    out = {"status": "ok", "units": work["units"], "unit": work.get("unit", "units")}
+    energy = samples["energy_mj"].dropna() if "energy_mj" in samples.columns else []
+    if not result.get("valid"):
+        out["status"] = "invalid"
+    elif len(energy) < 2 or energy.max() <= energy.min():
+        out["status"] = "no_energy"
+    else:
+        joules = float(energy.max() - energy.min()) / 1000.0
+        out.update(energy_j=joules, work_per_j=work["units"] / joules,
+                   j_per_work=joules / work["units"])
+    return out
+
+
+def _fmt_work_per_joule(w):
+    """Lines for the work/J result, or "" when the run recorded no work."""
+    if w is None:
+        return ""
+    head = f"\nwork: {w['units']:g} {w['unit']}"
+    if w["status"] == "invalid":
+        return head + " | work per joule: not computed (run INVALID, energy not trusted)"
+    if w["status"] == "no_energy":
+        return head + " | work per joule: not computed (no usable energy counter in window)"
+    return (f"{head} | {w['work_per_j']:.4g} {w['unit']}/J | {w['j_per_work']:.4g} J/{w['unit']}"
+            f" over {w['energy_j']:.1f} J\n"
+            "  energy = GPU-reported counter (NVML), not wall power: excludes CPU, board, "
+            "PSU losses")
 
 
 def _fmt_header(h):
@@ -53,6 +96,9 @@ def _fmt_header(h):
              f"SM clock ceiling {h.get('sm_clock_max_mhz')} MHz | "
              f"BW wall {h.get('bandwidth_wall_gbps')} GB/s "
              f"[{h.get('bandwidth_wall_source')}]"]
+    if h.get("bandwidth_read_only_gbps"):
+        lines.append(f"read-only BW {h['bandwidth_read_only_gbps']} GB/s "
+                     "(separate from the triad wall; reads only)")
     peaks = h.get("compute_peak_tflops")
     if peaks:
         lines.append("compute peak " + ", ".join(f"{dt}={tf} TF" for dt, tf in peaks.items()))

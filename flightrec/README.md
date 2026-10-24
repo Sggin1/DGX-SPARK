@@ -38,6 +38,7 @@ flightrec calibrate --python /path/to/torch-venv/bin/python
 ```
 
 Persists under `~/.cache/flightrec/calibration-<hostname>.json`.  
+Calibration also records a read-only streaming number next to the triad (see [Read-only bandwidth](#read-only-bandwidth)).  
 Example measured walls on GB10 LPDDR5X: **~220–226 GB/s** (~80–83% of the 273 GB/s spec). Uncalibrated fallback is a modeled **195 GB/s** constant.
 
 ---
@@ -63,7 +64,7 @@ Example unit file: [`systemd/flightrec-memguard.service`](systemd/flightrec-memg
 
 | command | what it does | key flags (defaults) |
 |---|---|---|
-| `record` | wrap a command → artifact | `--out` *(req)*, `--hz`(20), `--parse-tokens-re` |
+| `record` | wrap a command → artifact | `--out` *(req)*, `--hz`(20), `--parse-tokens-re`, `--work-units`, `--work-unit` |
 | `report` | provenance + validity + rollup + phase tree | positional `run_dir` |
 | `measure` | validity-gated utilization vector | `--bytes`, `--flops`(0), `--tokens` |
 | `aggregate` | N-run median/IQR/CV% + bootstrap CI (drops INVALID) | `--metric`(kernel_s), … |
@@ -135,6 +136,30 @@ with FlightRecorder("results/run01") as rec:
     with rec.phase("decode"):
         run_benchmark()
 ```
+
+---
+
+## Work per joule
+
+`record` can store how much work the command did, and `report` then prints work per joule and joules per work unit:
+
+```bash
+flightrec record --out results/run01 --work-units 128 --work-unit tokens -- python bench.py --tokens 128
+flightrec report results/run01
+```
+
+In-process: `rec.set_work(128, "tokens")` on a `FlightRecorder`. The raw `{units, unit}` goes into `header.json` under `work`; the ratio is computed only in the report, over the same window as the rest of the rollup (the marked phases, else the whole run).
+
+What to keep in mind (from our testing and from reading the code):
+
+- The energy is the **GPU-reported counter** (`energy_mj` from NVML), **not wall power**. It does not include CPU, board or PSU losses, so it should not be compared with wall-socket measurements.
+- The counter is sampled at ~6 Hz, so a very short window carries a quantization error at both ends.
+- If the run is INVALID (throttled, or the energy counter went backwards), or the counter is missing or did not advance, the report says so and prints no number.
+- If no work was recorded, nothing extra is printed.
+
+## Read-only bandwidth
+
+`flightrec calibrate` now also times a read-only sum reduction over a 1 GiB fp32 tensor (about 40x the 25 MB L2) and stores it as `read_only_gbps_measured` beside the existing triad number. The triad keys and file format are unchanged; `header.json` gains `bandwidth_read_only_gbps` (null when not measured). The triad mixes reads and writes, so a read-heavy kernel can exceed it. We therefore treat the triad as a reference for mixed traffic, not as a ceiling for read-heavy kernels. `above_wall` and `pct_of_wall` are still scored against the triad wall only. We have not validated the read-only number across boxes; a failure in this step is recorded as `read_only_error` and does not block the triad calibration.
 
 ---
 

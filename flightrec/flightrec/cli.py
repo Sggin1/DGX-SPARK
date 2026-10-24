@@ -95,6 +95,19 @@ def _build_parser():
         dest="parse_tokens_re",
         help="regex to auto-parse tok/s from bench stdout (first capture group or full match)",
     )
+    rec.add_argument(
+        "--work-units",
+        type=float,
+        default=None,
+        dest="work_units",
+        help="amount of work the command did (e.g. tokens, frames); report then prints work/J",
+    )
+    rec.add_argument(
+        "--work-unit",
+        default="tokens",
+        dest="work_unit",
+        help="label for --work-units (default tokens)",
+    )
     rec.add_argument("command", nargs=argparse.REMAINDER)
     rep = sub.add_parser("report", help="summarize a recorded artifact")
     rep.add_argument("run_dir")
@@ -486,6 +499,8 @@ def _do_record(args):
     tok_s = None
     window = 0 if args.no_quiesce else args.quiesce_window
     with FlightRecorder(args.out, hz=args.hz, quiesce_window=window) as rec:
+        if args.work_units is not None:
+            rec.set_work(args.work_units, args.work_unit)
         with rec.phase("command"):
             if cmd:
                 if args.parse_tokens_re:
