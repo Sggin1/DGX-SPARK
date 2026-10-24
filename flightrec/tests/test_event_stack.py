@@ -141,7 +141,7 @@ def test_rotation_without_compression_and_zero_backups(tmp_path):
     other = tmp_path / "z" / "events.jsonl"
     for i in range(4):
         el.append([_rec(f"k{i}")], other, max_bytes=300, backups=0)
-    assert [p.name for p in other.parent.iterdir() if p.name.startswith("events")] == ["events.jsonl"]
+    assert [p.name for p in other.parent.iterdir() if p.name.startswith("events") and not p.name.endswith(".lock")] == ["events.jsonl"]
 
 
 def test_max_age_prunes_rotated_files_by_mtime(tmp_path):
