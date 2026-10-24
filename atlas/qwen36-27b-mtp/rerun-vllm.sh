@@ -6,7 +6,7 @@
 set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BENCH_PY=/home/gx10/projects/atlas/runs/full-bench-2026-05-07/phase2/bench.py
+BENCH_PY=$HOME/projects/atlas/runs/full-bench-2026-05-07/phase2/bench.py
 MODEL=Qwen/Qwen3.6-27B-FP8
 HF_CACHE_HOST=/mnt/ai/cache/hub
 

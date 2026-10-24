@@ -21,7 +21,7 @@ Full multimodal (image + audio inputs) is out of scope — separate, larger effo
 
 - Atlas's `CONTRIBUTING.md` **explicitly states "All PRs are expected to be AI-generated"** — this is exactly the kind of contribution they want.
 - The fix is small and well-scoped (a parser fallback + a weight-loader filter).
-- The underlying LLM in Omni is **`nemotron_h`** (verified by reading Omni's `config.json` → `.llm_config.model_type == "nemotron_h"`), which Atlas already supports text-side at ~88 tok/s on this hardware (confirmed today in `/home/gx10/projects/atlas/runs/full-bench-2026-05-07/`).
+- The underlying LLM in Omni is **`nemotron_h`** (verified by reading Omni's `config.json` → `.llm_config.model_type == "nemotron_h"`), which Atlas already supports text-side at ~88 tok/s on this hardware (confirmed today in `~/projects/atlas/runs/full-bench-2026-05-07/`).
 - The maintainer is responsive on Discord.
 - Builds toward future multimodal support (Qwen3-VL, etc. — same wrapper pattern).
 
@@ -29,7 +29,7 @@ Full multimodal (image + audio inputs) is out of scope — separate, larger effo
 
 ## CLA — decision required before submitting
 
-**`/home/gx10/projects/atlas-src/CLA.md`** is the standard Apache-style "we can re-license" CLA:
+**`~/projects/atlas-src/CLA.md`** is the standard Apache-style "we can re-license" CLA:
 
 - You **retain copyright ownership** of your contribution (clause 4)
 - You grant Atlas a **perpetual, irrevocable license** including the right to **re-license under commercial/proprietary terms** for their Enterprise Edition (clause 2)
@@ -44,7 +44,7 @@ If this is acceptable, proceed. If not, the alternative is filing a detailed Git
 
 ### Already done
 
-- ✅ Atlas source cloned to **`/home/gx10/projects/atlas-src`** (depth=1 of `main`)
+- ✅ Atlas source cloned to **`~/projects/atlas-src`** (depth=1 of `main`)
 - ✅ Reproducible failure on Omni: `Error: Failed to parse config.json` → `missing field hidden_size at line 30243 column 1`
 - ✅ Root cause confirmed: Omni's `config.json` has nested `llm_config.hidden_size` (no top-level)
 - ✅ Underlying LLM verified Atlas-compatible: `model_type=nemotron_h, hidden_size=2688, layers=52, vocab=131072` — identical to non-Omni Nemotron-3-Nano
@@ -65,7 +65,7 @@ If this is acceptable, proceed. If not, the alternative is filing a detailed Git
 These must all pass before PR is mergeable. **All can run without a CUDA build** thanks to `ATLAS_SKIP_BUILD=1`:
 
 ```bash
-cd /home/gx10/projects/atlas-src
+cd ~/projects/atlas-src
 
 # 1. Format (auto-fixable)
 cargo fmt --all -- --check
@@ -192,7 +192,7 @@ Or keep it simpler: since `parse_config` already remaps the wrapper to the inner
 4. **(15 min)** Read the actual `dispatch.rs::parse_config` and `nemotron.rs` weight loader code in detail. Verify the assumptions in the sketch above match reality.
 5. **(30-60 min)** Implement the fix in a feature branch:
    ```bash
-   cd /home/gx10/projects/atlas-src
+   cd ~/projects/atlas-src
    git checkout -b fix/multimodal-wrapper-config
    # edit:
    #   crates/atlas-core/src/config/dispatch.rs
@@ -245,10 +245,10 @@ Total: ~90-150 min of focused work, modulo build-environment surprises.
 
 ## Cross-references
 
-- Original Omni probe + analysis: `/home/gx10/projects/atlas/runs/full-bench-2026-05-07/` (the Atlas vs vLLM benchmark) — the Phase 5b ngram-speculative attempt is the closest analogue (also a "tried, didn't work, reported with diagnosis" outcome)
-- Atlas source clone: `/home/gx10/projects/atlas-src/`
-- Maintainer's AI-contributor guide: `/home/gx10/projects/atlas-src/AGENTS.md`
-- CLA: `/home/gx10/projects/atlas-src/CLA.md`
+- Original Omni probe + analysis: `~/projects/atlas/runs/full-bench-2026-05-07/` (the Atlas vs vLLM benchmark) — the Phase 5b ngram-speculative attempt is the closest analogue (also a "tried, didn't work, reported with diagnosis" outcome)
+- Atlas source clone: `~/projects/atlas-src/`
+- Maintainer's AI-contributor guide: `~/projects/atlas-src/AGENTS.md`
+- CLA: `~/projects/atlas-src/CLA.md`
 - Pre-PR check commands: `AGENTS.md` § "Local checks before a PR"
 - Discord context: maintainer asked for Qwen3.6-27B-dense ± MTP test (separate workstream — `TODO.md` priority section)
 
@@ -258,11 +258,11 @@ Total: ~90-150 min of focused work, modulo build-environment surprises.
 
 ```bash
 # Quick re-orient
-less /home/gx10/projects/atlas/runs/accuracy-prep-2026-05-07/HANDOFF-omni-fix.md
-ls /home/gx10/projects/atlas-src/
+less ~/projects/atlas/runs/accuracy-prep-2026-05-07/HANDOFF-omni-fix.md
+ls ~/projects/atlas-src/
 
 # Verify clone is still valid (git wasn't touched since clone)
-cd /home/gx10/projects/atlas-src && git log --oneline -1
+cd ~/projects/atlas-src && git log --oneline -1
 
 # Then resume at "Concrete next-step order" §1 above
 ```
@@ -270,5 +270,5 @@ cd /home/gx10/projects/atlas-src && git log --oneline -1
 If the source clone is gone (e.g. /tmp wiped between sessions, or accidental delete), re-clone with:
 
 ```bash
-git clone --depth=1 https://github.com/Avarok-Cybersecurity/atlas /home/gx10/projects/atlas-src
+git clone --depth=1 https://github.com/Avarok-Cybersecurity/atlas ~/projects/atlas-src
 ```

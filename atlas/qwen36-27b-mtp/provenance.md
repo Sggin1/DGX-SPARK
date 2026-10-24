@@ -1,7 +1,7 @@
 # Run provenance — qwen3.6-27B-FP8 ± MTP vs vLLM
 
 Captured: 2026-05-07T20:29:48Z
-Run dir: `/home/gx10/projects/atlas/runs/qwen36-27b-mtp-2026-05-07`
+Run dir: `~/projects/atlas/runs/qwen36-27b-mtp-2026-05-07`
 
 ## Hardware
 
