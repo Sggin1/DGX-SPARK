@@ -52,7 +52,7 @@ are good, but facts are better" — each protocol is the gate an idea must pass 
 - Plot each phase as a point on arithmetic-intensity vs achieved-throughput; colour by verdict so
   bandwidth-starved vs compute-starved vs throttled is visually separable. Label the wall "measured".
 
-### 4b. Cold-cache decode microbenchmarks: ROTATE the working set, report the MEDIAN (MANDATORY)
+### 4b. Cold-cache decode microbenchmarks: ROTATE the working set, report the MEDIAN (what we do)
 **GB10 L2 = 25.2 MB** — a single 4096² FP4 weight (~8 MB) sits **entirely in L2**, so a reused-weight loop
 measures **L2, not DRAM** (marlin read 476 GB/s = **217% of the 220 wall** — impossible). Real decode reads
 each layer's weight **cold from DRAM** (the model is GBs; long-evicted by the time a token returns). The
@@ -60,14 +60,18 @@ protocol we settled on (2026-06-06; we compared three methods and rotation looke
 - **ROTATE over a weight POOL larger than L2** (≥ ~64 MB, e.g. 8 weights): each timed call uses a fresh
   weight that's been evicted since its last use. Looked clean in our runs (CV ~2%, though the raw samples were not saved), with no obvious perturbation. **This is our best current method, not a proven one.**
 - **Report the MEDIAN + bootstrap CI** (`stats.median_ci`), **never best-of** (best-of games the L2 residual).
-- **We would avoid a big-buffer "flush" between calls** (e.g. a 256 MB write): in our runs it looked **noisier and
-  over-penalizing**. Marlin with rotation read **50 µs (85% of the wall; one run, median of 48 samples, gx10)**. The flush
-  figures (about 88 µs, 49% of the wall, CV 29%) are from an earlier session; **the raw data was not preserved and we have not
-  re-run it**. Our guess is that the giant write perturbs the memory controller (write-drain caught in the next timing); that is
-  unconfirmed. We use rotation, not flush.
-- **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method. Cold M=1 in our runs (single runs, one box):
-  marlin **85% of wall** (compute-GEMM that *does* stream cold), mm_fp4 **49%**, a naive custom GEMV **36%**
-  (occupancy-bound). Any cross-kernel decode head-to-head should use identical rotation+median on both sides (we think),
+- **We use rotation rather than a big-buffer "flush" between calls** (e.g. a 256 MB write). Marlin with rotation read
+  **50 µs (85% of the wall; one run, median of 48 samples, gx10)** in the original June log. **Re-run 2026-10-23** with raw
+  samples saved (marlin, M=1, 4096², n = 200 per cell, two sessions on gx10 and one on gx11): rotation over 4 to 32 weights read
+  about **46 to 50 µs** and was flat across pool sizes; a pool of 2 weights (under the L2) read about 19.8 µs, the same as a
+  single weight in a loop; the 256 MB flush read about **87 to 90 µs**, about 1.8 times the rotation figure. The earlier note
+  that flush was *noisier* was **not** reproduced (its spread was about as tight as rotation's). Why flush reads slower is
+  untested; one guess is that the 256 MB write leaves dirty lines being written back during the timed call.
+- **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method. Cold M=1, rotation, pool 8 (median µs,
+  gx10 / gx11): marlin 48.3 / 48.5, mm_fp4 99.5 / 97.4, a naive custom GEMV 118.1 / 105.8. That is about 2.0 times slower than
+  marlin for mm_fp4 and 2.1 to 2.4 times slower for the custom kernel (the June gx10 log had 2.14). These are single sessions;
+  the spread between boxes and sessions is larger than the within-run intervals. We guess (untested) that the custom kernel is
+  occupancy-bound. Any cross-kernel decode head-to-head should use identical rotation+median on both sides (we think),
   or it is not a comparison. (This protocol itself took 5 corrections to get right — hot→best-of→flush→rotation.)
 
 ## 5. Find, don't guess — the escalation ladder

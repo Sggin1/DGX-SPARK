@@ -10,7 +10,7 @@
 
 ## TL;DR
 
-The symptom — **611 MHz pinned clock, ~13 W power draw, ~50 °C temperature cap under load** — is the canonical USB-C PD (Power Delivery) controller firmware wedge on GB10 hardware. 611 MHz is the literal hardcoded fallback P-state firmware drops into, not a rounding artifact. The temperature "cap" is misleading: the GPU is in a low P-state, not thermally limited, so it never gets warm enough to actually throttle.
+The symptom — **611 MHz pinned clock, ~13 W power draw, ~50 °C temperature cap under load** — looked like a USB-C PD (Power Delivery) controller firmware wedge on our GB10 box, and the cold-drain steps below fixed it for us. 611 MHz looks like the fallback P-state the firmware drops into (our reading, not a vendor statement). The temperature "cap" is misleading: the GPU is in a low P-state, not thermally limited, so it never gets warm enough to actually throttle.
 
 **Cold-drain reset of the power brick is the fix that worked for us and that 6+ other users reported working** (their reports, which we did not check ourselves; our own 2026-05-19 gx10 run is one box). Holding the power button alone is not enough — the PD MCU lives inside the brick and needs to lose rail voltage. **After the unwedge, flash the latest vendor-signed PD firmware** to reduce recurrence, then do a *second* cold drain so the new firmware activates from EEPROM.
 
