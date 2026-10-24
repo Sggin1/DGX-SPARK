@@ -1,8 +1,14 @@
-# flightrec — GB10 benchmark flight recorder
+# flightrec — GB10 flight recorder: run validity, memory guard and monitoring
 
 Always-on, low-overhead **Tier-1** machine-state recorder for **NVIDIA DGX Spark (GB10 / sm_121a)**.
 
-Wrap a bench, get a self-describing artifact: GPU power / clock / throttle / energy, CPU, and memory pressure on **one timeline**. Runs that throttled are marked **invalid**. Especially useful for **OOM / memory-pressure** triage (`mem_guard`) and for throwing out power-path / thermal wedges before they pollute results.
+Three parts:
+
+1. **Record and validity.** Wrap a bench or job and get a self-describing artifact: GPU power / clock / throttle / energy, CPU, and memory pressure on **one timeline**. Runs that throttled are marked **invalid**, which keeps power-path and thermal wedges out of results.
+2. **Memory guard (`mem_guard`).** On unified-memory GB10, an out-of-memory condition often shows up as a frozen host rather than a clean error. `mem_guard` is an opt-in daemon that warns and, below a kill threshold, ends matching runaway processes (and stops non-registry containers). Review the flags before enabling it; a threshold that is too tight can end a job that would have finished.
+3. **Monitoring.** `smoke` (pre-flight scan), `watch` (stall detection) and `live` (throttle alarm).
+
+Benchmark statistics (adaptive-N sampling, gates, aggregation) are included for results that need them.
 
 **Role:** data provider — clean, gated artifacts for analysis, not the analyst.
 
