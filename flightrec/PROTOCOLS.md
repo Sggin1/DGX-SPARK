@@ -54,14 +54,14 @@ are good, but facts are better" — each protocol is the gate an idea must pass 
 
 ### 4b. Cold-cache decode microbenchmarks: ROTATE the working set, report the MEDIAN (what we do)
 **GB10 L2 = 25.2 MB** — a single 4096² FP4 weight (~8 MB) sits **entirely in L2**, so a reused-weight loop
-measures **L2, not DRAM** (marlin read 476 GB/s, well above the 273 GB/s memory spec — not possible from DRAM). Real decode reads
+measures **L2, not DRAM** (marlin read about 440 GB/s on its own 8.67 MB per call, well above the 273 GB/s memory spec — not possible from DRAM). Real decode reads
 each layer's weight **cold from DRAM** (the model is GBs; long-evicted by the time a token returns). The
 protocol we settled on (2026-06-06; we compared three methods and rotation looked the most trustworthy to us, see the caveat on the numbers below):
 - **ROTATE over a weight POOL larger than L2** (≥ ~64 MB, e.g. 8 weights): each timed call uses a fresh
   weight that's been evicted since its last use. Looked clean in our runs (CV ~2%, though the raw samples were not saved), with no obvious perturbation. **This is our best current method, not a proven one.**
 - **Report the MEDIAN + bootstrap CI** (`stats.median_ci`), **never best-of** (best-of games the L2 residual).
 - **We use rotation rather than a big-buffer "flush" between calls** (e.g. a 256 MB write). Marlin with rotation read
-  **50 µs (85% of the wall; one run, median of 48 samples, gx10)** in the original June log. **Re-run 2026-10-23** with raw
+  **50 µs (reported as 85% of a 220 GB/s wall; see the review update on the byte count below; one run, median of 48 samples, gx10)** in the original June log. **Re-run 2026-10-23** with raw
   samples saved (marlin, M=1, 4096², n = 200 per cell, two sessions on gx10 and one on gx11): rotation over 4 to 32 weights read
   about **46 to 50 µs** and was flat across pool sizes; a pool of 2 weights (under the L2) read about 19.8 µs, the same as a
   single weight in a loop; the 256 MB flush read about **87 to 90 µs**, about 1.8 times the rotation figure. The earlier note
@@ -79,10 +79,10 @@ protocol we settled on (2026-06-06; we compared three methods and rotation looke
   a second timing loop disagreed with the first. We now suggest checking any timing with a second, independent method (graph replay or a
   profiler's kernel duration) and treating a disagreement as a finding.
 - **Review update: timings vary between process launches.** The 200-sample intervals above describe one launch. Repeating the same script in a fresh process (4096x4096, M=1, several launches per box over about 13 hours, including one power cycle) changed the per-call median by 4 to 8% for marlin, 1 to 9% for mm_fp4, 16 to 24% for our single-buffered custom kernel and 37 to 39% for the double-buffered one (up to 43% in some cells). The ratio of mm_fp4 to marlin at M=1 was 1.23 to 1.45 on gx10 and 1.29 to 1.39 on gx11 over these launches, and 1.54 to 1.69 for the 4096x12288 and 12288x4096 shapes in the final pass. In a follow-up test on gx10, reallocating the weight pools 12 times inside one process (a dummy allocation of random size kept alive between rounds to shift later allocations) changed the M=1 per-call median by 22 to 37% for mm_fp4 and our two custom kernels, but by 0.9% for marlin. The spread therefore appears to depend on where the weights are allocated; we have not observed physical addresses or identified the mechanism. For cross-kernel comparisons we now suggest repeating the allocation several times and reporting the range, not a single launch. The lowest-time kernel at each batch size was the same in the sessions compared.
-- **Review update: the bandwidth "wall" is not a ceiling for read-heavy kernels.** 9.45 MB in the graph-timed 37.8 µs for marlin is
-  about 250 GB/s, above the 220 GB/s triad figure used for "% of wall" here and elsewhere in these notes, and about equal to a
-  read-only sum reduction measured at 247 GB/s (best of 50, fp32, one session on gx10). Percentages computed against the
-  triad figure, including the 85% above, should not be used.
+- **Review update: the byte count and the bandwidth "wall".** The "% of wall" figures used one byte count for every kernel, 9.45 MB per call at M=1: 4-bit weights plus one 8-bit scale per 16 values, which is the NVFP4 count. Marlin moves 4-bit weights plus 16-bit scales per 128 values, about 8.67 MB, so its percentages were about 9% too high. On its own count, the graph-timed 37.8 µs for marlin is
+  about 229 GB/s, above the 220 GB/s constant used for "% of wall" here and elsewhere in these notes but below values measured on other days on gx10 (STREAM-triad 235 GB/s; a read-only sum reduction, best of 50, fp32, 247 to 263 GB/s). So the 220 GB/s constant is not a ceiling, and
+  percentages computed against it (including the 85% above) should not be used. Against 263 GB/s, marlin at 37.8 µs is about 87%, and mm_fp4 on its own 9.45 MB at about 43 to 47 µs is about 76 to 83%.
+  The 263 GB/s figure is itself one session's best of 50 on fp32, so it is an upper envelope and not a guaranteed ceiling.
 - **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method, and from a timing method that includes
   launch cost. In a batch-size sweep (M = 1 to 512, 4096², graph-timed, one session per box) marlin had the lowest time per
   token up to M = 64 and mm_fp4 from M = 96 up, on both boxes. Further sessions and two other shapes (4096x12288 and
