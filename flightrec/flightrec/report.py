@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from flightrec import kernel_events, memguard_events
 from flightrec.validate import verdict
 from flightrec.phase_tree import build_tree, format_tree
 
@@ -123,10 +124,19 @@ def _fmt_kernel_events(header, events, show=5):
         counts[e["category"]] = counts.get(e["category"], 0) + 1
     by_cat = ", ".join(f"{c} {n}" for c, n in sorted(counts.items()))
     lines = [head + f"{info['count']}" + (f" ({by_cat})" if by_cat else "")]
-    lines += [f"  {e['time']} [{e['category']}] {e['line']}" for e in events[:show]]
-    if len(events) > show:
-        lines.append(f"  ... {len(events) - show} more in kernel_events.json")
-    return "\n".join(lines)
+    return "\n".join(lines + _group_lines(kernel_events.group(events), info, show,
+                                         "kernel_events.json"))
+
+
+def _group_lines(groups, info, show, filename):
+    """Top ``show`` counted groups (one line each) plus a pointer to the full raw file."""
+    lines = ["  " + kernel_events.format_group(g) for g in groups[:show]]
+    if len(groups) > show:
+        lines.append(f"  ... {len(groups) - show} more groups in {filename}")
+    if info.get("truncated"):
+        lines.append(f"  note: {filename} holds the first {info.get('stored')} of "
+                     f"{info.get('count')} lines; the counts above cover only those")
+    return lines
 
 
 def _load_json_list(run_dir, name):
@@ -148,10 +158,8 @@ def _fmt_memguard(header, events, show=5):
     if not info.get("count"):
         return head + "none"
     lines = [head + f"{info['count']} events (listed only; the run is not marked invalid)"]
-    lines += [f"  {e['time']} [{e['category']}] {e['line']}" for e in events[:show]]
-    if len(events) > show:
-        lines.append(f"  ... {len(events) - show} more in memguard_events.json")
-    return "\n".join(lines)
+    return "\n".join(lines + _group_lines(memguard_events.group(events), info, show,
+                                         "memguard_events.json"))
 
 
 def _fmt_platform(header):

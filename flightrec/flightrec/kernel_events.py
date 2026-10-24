@@ -20,6 +20,7 @@ import re
 import subprocess
 import time
 from collections import Counter
+from datetime import datetime
 
 # First match wins, so an "NVRM: Xid" line is nvrm_xid and not also nvrm.
 _RULES = [
@@ -44,6 +45,21 @@ _PERMISSION = re.compile(r"permission|not seeing messages|No journal files", re.
 CATEGORIES = [name for name, _ in _RULES]
 SCAN_TIMEOUT_S = 15.0
 BOOT_TIMEOUT_S = 20.0
+# Stored raw lines per artifact file; a runaway log must not bloat a recording.
+MAX_STORED_EVENTS = 2000
+
+# Placeholders for normalize(); order matters (timestamps and PCI before bare digit runs).
+_NORMALIZE = [
+    (re.compile(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?"), "<ts>"),
+    (re.compile(r"\[\s*\d+\.\d+\]"), "[<uptime>]"),
+    (re.compile(r"\b\d\d:\d\d:\d\d(?:\.\d+)?\b"), "<time>"),
+    (re.compile(r"\b[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}(?:\.\d)?\b", re.I), "<pci>"),
+    (re.compile(r"\b[0-9a-f]{2}:[0-9a-f]{2}\.\d\b", re.I), "<pci>"),
+    (re.compile(r"\[\d+\]"), "[<pid>]"),
+    (re.compile(r"\b0x[0-9a-f]+\b", re.I), "<hex>"),
+    (re.compile(r"(?<![\w.])\d+(?:\.\d+)+"), "<n>"),
+]
+_WS = re.compile(r"\s+")
 
 
 def classify(message):
@@ -158,13 +174,21 @@ def capture_for_run(out_dir, start_unix, end_unix, runner=None):
         events, reason = scan(since, until, runner=runner)
         if events:
             (out_dir / "kernel_events.json").write_text(
-                json.dumps(events, indent=2), encoding="utf-8")
+                json.dumps(events[:MAX_STORED_EVENTS], indent=2), encoding="utf-8")
         status = "ok" if reason is None else "unreadable"
-        return {"status": status, "reason": reason, "count": len(events),
+        info = {"status": status, "reason": reason, "count": len(events),
                 "since": since, "until": until}
+        return _with_cap(info, len(events))
     except Exception as exc:  # noqa: BLE001 - must never break a recording
         return {"status": "unreadable", "reason": f"{exc.__class__.__name__}: {exc}",
                 "count": 0, "since": None, "until": None}
+
+
+def _with_cap(info, total):
+    """Add ``truncated``/``stored`` when the file holds fewer lines than ``count``."""
+    if total > MAX_STORED_EVENTS:
+        info.update(truncated=True, stored=MAX_STORED_EVENTS)
+    return info
 
 
 def _stamp(unix):
@@ -175,3 +199,72 @@ def _stamp(unix):
 def _first_line(text):
     lines = (text or "").strip().splitlines()
     return lines[0] if lines else "no message"
+
+
+def normalize(message, min_digits=3):
+    """Grouping key for a message: numbers and addresses become placeholders.
+
+    Replaced by ``<ts>``, ``<time>``, ``[<uptime>]``, ``<pci>``, ``[<pid>]``, ``<hex>``
+    (``0x...``), ``<n>`` (decimals, and digit runs of ``min_digits`` or more); whitespace
+    is collapsed. Digit runs shorter than ``min_digits`` are kept (so "Xid 79" and
+    "Xid 13" stay apart by default).
+    """
+    text = message
+    for pattern, token in _NORMALIZE:
+        text = pattern.sub(token, text)
+    text = re.sub(r"\d{%d,}" % max(1, int(min_digits)), "<n>", text)
+    return _WS.sub(" ", text).strip()
+
+
+def epoch(text):
+    """Seconds since the epoch for a journal ``short-iso`` time, or None if unparsable."""
+    try:
+        t = str(text).strip()
+        if t.endswith("Z"):
+            t = t[:-1] + "+00:00"
+        found = re.search(r"([+-])(\d\d)(\d\d)$", t)
+        if found and ":" not in t[-5:]:
+            t = t[:-5] + f"{found.group(1)}{found.group(2)}:{found.group(3)}"
+        stamp = datetime.fromisoformat(t)
+        return (stamp.astimezone() if stamp.tzinfo is None else stamp).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def group(events, min_digits=3):
+    """Counted stack of events -> list of group dicts.
+
+    Each group: ``key``, ``example`` (first raw line, in time order), ``category``,
+    ``count``, ``first``, ``last`` (time strings as found), ``burst`` (most occurrences
+    inside one calendar second; 1 when times are unparsable) and ``by_boot``
+    ({boot: n}, empty for events without a boot). Sorted by count (largest first),
+    then by first time.
+    """
+    buckets = {}
+    for index, event in enumerate(events):
+        key = normalize(event["line"], min_digits)
+        buckets.setdefault((event["category"], key), []).append((index, event))
+    groups = []
+    for (category, key), items in buckets.items():
+        stamped = sorted(((epoch(e["time"]), i, e) for i, e in items),
+                         key=lambda t: (t[0] is None, t[0] or 0.0, t[1]))
+        seconds = Counter(int(t[0]) if t[0] is not None else str(t[2]["time"])[:19]
+                          for t in stamped)
+        boots = Counter(e["boot"] for e in (t[2] for t in stamped) if "boot" in e)
+        groups.append({"key": key, "example": stamped[0][2]["line"], "category": category,
+                       "count": len(stamped), "first": stamped[0][2]["time"],
+                       "last": stamped[-1][2]["time"], "burst": max(seconds.values()),
+                       "by_boot": dict(sorted(boots.items())),
+                       "_sort": stamped[0][0] if stamped[0][0] is not None else 0.0})
+    groups.sort(key=lambda g: (-g["count"], g["_sort"], g["key"]))
+    for g in groups:
+        del g["_sort"]
+    return groups
+
+
+def format_group(g):
+    """One line: ``173 x [nvrm_oom] <example>  (first ..., last ..., largest burst N/s)``."""
+    parts = [f"first {g['first']}", f"last {g['last']}"]
+    if g.get("burst"):
+        parts.append(f"largest burst {g['burst']}/s")
+    return f"{g['count']} x [{g['category']}] {g['example']}  ({', '.join(parts)})"

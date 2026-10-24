@@ -72,7 +72,8 @@ Example unit file: [`systemd/flightrec-memguard.service`](systemd/flightrec-memg
 |---|---|---|
 | `record` | wrap a command → artifact | `--out` *(req)*, `--hz`(20), `--parse-tokens-re`, `--work-units`, `--work-unit` |
 | `report` | provenance + validity + rollup + phase tree | positional `run_dir` |
-| `kernel-events` | list GPU/driver-related kernel log lines (read-only) | `--since`, `--until`, `--boot`, `--all-boots`, `--json`, `--max-lines`(50), `--guard` |
+| `kernel-events` | list GPU/driver-related kernel log lines (read-only) | `--since`, `--until`, `--boot`, `--all-boots`, `--json`, `--max-lines`(50), `--guard`, `--group`, `--max-groups`(20), `--log [PATH]`, `--since-last` |
+| `events-log show` | read the rolling event log (live + rotated) | optional `PATH`, `--last`(20), `--group` |
 | `platform` | print a read-only platform snapshot | `--json` |
 | `platform-diff` | show only the fields that differ between two snapshots | positional `A B` |
 | `measure` | validity-gated utilization vector | `--bytes`, `--flops`(0), `--tokens` |
@@ -184,6 +185,71 @@ This only reads the kernel log the systemd journal already keeps (`journalctl -k
 `record` also scans the run window when the command finishes. `header.json` gets a `kernel_events` entry (status ok or unreadable with a reason, the count, the window), and any matching lines go to `kernel_events.json`; `report` prints a short section for them. Events do not make a run invalid. If `journalctl` is missing or the journal is not readable for the current user (some systems need membership of the `systemd-journal` or `adm` group), the result is an empty list plus the reason, and the recording is unaffected. Artifacts recorded before this field existed simply print no such section.
 
 What we saw: one line, `NVRM: refcntRequestReference_IMPL: Failed to enter state 1 (current state: 0, status: 0x00000056)`, appeared once each time a `torch.profiler` session started on a GB10. We do not know what it means or whether it matters; listing it is the point of this command, not a conclusion about it.
+
+---
+
+## Counted groups and an optional event log
+
+```bash
+flightrec kernel-events --since "2 days ago" --group              # counted stack, top 20 groups
+flightrec kernel-events --all-boots --group --guard --max-groups 10
+flightrec kernel-events --log --since-last                        # append to the default log file
+flightrec events-log show --last 20
+flightrec events-log show --group
+```
+
+On one GB10 the kernel log held 173 lines of the form `NVRM: nvCheckOkFailedNoLog: Check failed: Out of memory [NV_ERR_NO_MEMORY] (0x00000051) returned from _memdescAllocInternal(pMemDesc) @ mem_desc.c:NNN`, often several in the same second and differing only in numbers. Listing each one is noise, so `--group` (works with `--all-boots`, `--json`, `--guard`) prints one line per normalized message:
+
+```
+173 x [nvrm_oom] NVRM: nvCheckOkFailedNoLog: ...  (first <time>, last <time>, largest burst N/s)
+```
+
+The key replaces timestamps, PCI addresses, `0x...` numbers, decimals, pids in brackets and digit runs of 3 or more with placeholders (`<ts>`, `<pci>`, `<hex>`, `<n>`, `[<pid>]`) and collapses whitespace; messages with the same key and category are counted together, and the example is the earliest raw line. Shorter numbers are kept, so `Xid 79` and `Xid 13` stay separate groups; memory-guard lines are normalized more aggressively because they are mostly numbers. "Largest burst" is the most occurrences inside one calendar second as the journal timestamps them (second resolution). Groups are sorted by count, then first time, and `--max-groups` (20) caps the printout. With `--group --json` the output carries `groups` instead of `events`.
+
+`report` now shows the top few groups with counts in the kernel-events and memory-guard sections instead of the first raw lines. `kernel_events.json` / `memguard_events.json` still hold raw lines, but at most 2000 each; if more were found, `header.json` records `truncated: true`, `stored: 2000` and the true `count`, and `report` says that the group counts cover only the stored lines.
+
+### Rolling event log (off unless you pass `--log`)
+
+```bash
+flightrec kernel-events --log [PATH] [--max-bytes N] [--backups N] [--no-compress] \
+                        [--max-age-days N] [--since-last] [--quiet]
+```
+
+`--log` appends one JSON line per group per scan: `{ts, boot, category, key, example, count, first, last}` (`host_label` is a supported field of the module but is not set by the command line). Without PATH the file is `$XDG_STATE_HOME/flightrec/events.jsonl`, or `~/.local/state/flightrec/events.jsonl` when that variable is unset or not absolute; nothing is written under `/tmp`. With `--guard` the guard groups are logged too. Limits as implemented:
+
+- Merge: if the file's final line has the same key and boot and its `last` is within 60 s of the new group's `first`, the counts are added and `last` updated in that line instead of adding one. Only the final line is considered, so with several different messages per scan this merges less often than one might hope.
+- Size: when an append would pass `--max-bytes` (5 MiB) the file is renamed to `events.jsonl.1.gz` (`.1` with `--no-compress`), older backups shift up, and anything beyond `--backups` (5) is deleted. A single record larger than the cap is still written.
+- Age: `--max-age-days N` deletes rotated files whose modification time is older than N days (the live file is never pruned). Default is no age limit.
+- Locking: an advisory `flock` on `events.jsonl.lock` where Python has `fcntl`; otherwise no lock is taken. We have only exercised the lock path with a stand-in object in tests, not with concurrent writers.
+- Errors: a failed write prints `event log: could not write (...)` and exits 1; it does not raise and does not affect the scan.
+- `boot` is the journalctl offset at scan time (0 = current), so the same boot is numbered differently after a reboot.
+
+`--since-last` (needs `--log`) stores the newest event time seen in `events.jsonl.state` and starts the next scan one second after it, so repeated runs mostly add only new events. It uses event times, not a journal cursor. Events written to the journal within that same second after a scan could be missed, and a run that reads without `--since-last` over a range already logged will count those events again. If a boot cannot be read, the stored time is not advanced. When a stored time exists it replaces `--since`.
+
+`events-log show [PATH] [--last N] [--group]` reads the live file and any rotated `.gz` or plain backups, oldest first. Without `--group` it prints the last N records (20); with `--group` it sums all records (or the last N if given) into counted groups. Burst figures are not stored in the log, so they are not shown there. Unreadable lines are skipped and counted.
+
+Memory-guard's own `--log` file (lines like `[HH:MM:SS] WARN used=...`) is not read: those lines carry no date, and labelling them with the file's modification date would be a guess. `mem_guard.py` is unchanged.
+
+Nothing is scheduled or installed by flightrec. If you want periodic scans, the following is only an example to adapt; we have not run it on a real box.
+
+```
+# EXAMPLE only - cron, every 10 minutes, current user
+*/10 * * * * flightrec kernel-events --all-boots --guard --log --since-last --quiet
+
+# EXAMPLE only - ~/.config/systemd/user/flightrec-events.service
+[Service]
+Type=oneshot
+ExecStart=flightrec kernel-events --all-boots --guard --log --since-last --quiet
+
+# EXAMPLE only - ~/.config/systemd/user/flightrec-events.timer
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+[Install]
+WantedBy=timers.target
+```
+
+The journal must be readable by that user (see above). User-level units may need `loginctl enable-linger` to run when logged out.
 
 ---
 

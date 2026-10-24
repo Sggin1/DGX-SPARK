@@ -112,7 +112,7 @@ def test_report_section_none_some_unreadable_and_old_artifact():
     ok4 = {"memguard": {"status": "ok", "reason": None, "count": 4}}
     text = _fmt_memguard(ok4, events, show=2)
     assert "memory guard during the run: 4 events" in text and "not marked invalid" in text
-    assert "[warn]" in text and "[breach]" in text and "2 more" in text
+    assert "1 x [warn]" in text and "1 x [kill]" in text and "2 more groups" in text
     bad = {"memguard": {"status": "unreadable", "reason": "journalctl not found"}}
     assert "could not read (journalctl not found)" in _fmt_memguard(bad, [])
     assert _fmt_memguard({}, []) == ""

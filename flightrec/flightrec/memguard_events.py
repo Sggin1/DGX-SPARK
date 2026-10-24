@@ -43,6 +43,11 @@ def classify(message):
     return None
 
 
+def group(events):
+    """Counted stack of guard events (all digit runs are normalized: the lines are numeric)."""
+    return ke.group(events, min_digits=1)
+
+
 def parse(text):
     """Matching lines of ``journalctl -u ... -o short-iso`` output -> event dicts."""
     events = []
@@ -88,10 +93,11 @@ def capture_for_run(out_dir, start_unix, end_unix, runner=None):
         events, reason = scan(since, until, runner=runner)
         if events:
             (out_dir / "memguard_events.json").write_text(
-                json.dumps(events, indent=2), encoding="utf-8")
+                json.dumps(events[:ke.MAX_STORED_EVENTS], indent=2), encoding="utf-8")
         status = "ok" if reason is None else "unreadable"
-        return {"status": status, "reason": reason, "count": len(events),
+        info = {"status": status, "reason": reason, "count": len(events),
                 "since": since, "until": until}
+        return ke._with_cap(info, len(events))
     except Exception as exc:  # noqa: BLE001 - must never break a recording
         return {"status": "unreadable", "reason": f"{exc.__class__.__name__}: {exc}",
                 "count": 0, "since": None, "until": None}
