@@ -54,7 +54,7 @@ are good, but facts are better" — each protocol is the gate an idea must pass 
 
 ### 4b. Cold-cache decode microbenchmarks: ROTATE the working set, report the MEDIAN (what we do)
 **GB10 L2 = 25.2 MB** — a single 4096² FP4 weight (~8 MB) sits **entirely in L2**, so a reused-weight loop
-measures **L2, not DRAM** (marlin read 476 GB/s = **217% of the 220 wall** — impossible). Real decode reads
+measures **L2, not DRAM** (marlin read 476 GB/s, well above the 273 GB/s memory spec — not possible from DRAM). Real decode reads
 each layer's weight **cold from DRAM** (the model is GBs; long-evicted by the time a token returns). The
 protocol we settled on (2026-06-06; we compared three methods and rotation looked the most trustworthy to us, see the caveat on the numbers below):
 - **ROTATE over a weight POOL larger than L2** (≥ ~64 MB, e.g. 8 weights): each timed call uses a fresh
@@ -67,12 +67,29 @@ protocol we settled on (2026-06-06; we compared three methods and rotation looke
   single weight in a loop; the 256 MB flush read about **87 to 90 µs**, about 1.8 times the rotation figure. The earlier note
   that flush was *noisier* was **not** reproduced (its spread was about as tight as rotation's). Why flush reads slower is
   untested; one guess is that the 256 MB write leaves dirty lines being written back during the timed call.
-- **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method. Cold M=1, rotation, pool 8 (median µs,
-  gx10 / gx11): marlin 48.3 / 48.5, mm_fp4 99.5 / 97.4, a naive custom GEMV 118.1 / 105.8. That is about 2.0 times slower than
-  marlin for mm_fp4 and 2.1 to 2.4 times slower for the custom kernel (the June gx10 log had 2.14). These are single sessions;
-  the spread between boxes and sessions is larger than the within-run intervals. We guess (untested) that the custom kernel is
-  occupancy-bound. Any cross-kernel decode head-to-head should use identical rotation+median on both sides (we think),
-  or it is not a comparison. (This protocol itself took 5 corrections to get right — hot→best-of→flush→rotation.)
+- **Review update (2026-10-23): the timings above include launch overhead.** They put CUDA events around one Python call, so each
+  number contains the cost of launching it. Re-timing with CUDA-graph replay (M=1, rotation over 8 weights, n = 200, one session
+  per box) gave, in µs on gx10 / gx11: marlin 37.8 / 39.7, mm_fp4 53.1 / 51.3, a naive single-buffered custom kernel
+  125.8 / 103.8. The launch overhead was about 9 µs for marlin and about 45 µs for mm_fp4, so event timing overstated mm_fp4 the
+  most. The event-timed figures above are kept for the record, but their ratios (mm_fp4 about 2 times slower than marlin) should
+  not be used; with graph timing mm_fp4 looked about 1.3 to 1.4 times slower at M=1. Part of that was our own harness, which
+  recomputed mm_fp4's scale factor inside every timed call (two extra small kernels). With that moved out, one re-run on gx10
+  gave mm_fp4 48.2 µs against marlin 39.2 µs (a ratio of 1.23), and a profiler showed the GEMM kernel alone at 47.0 µs against
+  marlin's 39.7 µs; the same re-run on gx11 is still to be repeated. We found the launch-overhead problem by accident, because
+  a second timing loop disagreed with the first. We now suggest checking any timing with a second, independent method (graph replay or a
+  profiler's kernel duration) and treating a disagreement as a finding.
+- **Review update: the bandwidth "wall" is not a ceiling for read-heavy kernels.** 9.45 MB in the graph-timed 37.8 µs for marlin is
+  about 250 GB/s, above the 220 GB/s triad figure used for "% of wall" here and elsewhere in these notes, and about equal to a
+  read-only sum reduction measured at 247 GB/s (best of 50, fp32, one session on gx10). Percentages computed against the
+  triad figure, including the 85% above, should not be used.
+- **Consequence:** the cold ranking can differ wildly from hot AND from a bad cold method, and from a timing method that includes
+  launch cost. In a batch-size sweep (M = 1 to 512, 4096², graph-timed, one session per box) marlin had the lowest time per
+  token up to M = 64 and mm_fp4 from M = 96 up, on both boxes. A second session and two other shapes (4096x12288 and
+  12288x4096) showed the same pattern, apart from the 12288x4096 shape at M = 128, where marlin was ahead on both boxes. Our two naive custom kernels were not ahead in any band we
+  could reproduce, so we make no claim that they beat marlin or mm_fp4 anywhere. These are single sessions; the spread
+  between boxes and sessions is larger than the within-run intervals. We guess (untested) that the custom kernels are
+  occupancy-bound at small M. Any cross-kernel head-to-head should use identical rotation+median on both sides (we think),
+  or it is not a comparison. (This protocol itself took 5 corrections to get right — hot→best-of→flush→rotation→graph timing.)
 
 ## 5. Find, don't guess — the escalation ladder
 When a window is slow, **descend until you hit a layer you can change, or have good evidence is silicon:**
