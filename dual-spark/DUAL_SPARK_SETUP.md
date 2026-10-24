@@ -5,6 +5,8 @@ single CX-7 direct-link cable, running vLLM via eugr's
 [`spark-vllm-docker`](https://github.com/eugr/spark-vllm-docker). Every step is
 paste-ready. Troubleshooting lives next to the step that introduced it.
 
+**Addresses:** the `10.10.0.x` and `10.10.1.x` addresses used throughout are example private addresses for the direct link between the two nodes; use any unused private range, changed consistently on both nodes.
+
 **Target result:** TP=2 cluster over ~195 Gb/s RDMA (~98 % of the single-port
 200 Gb/s ceiling), inference healthy in under 20 minutes on a pair that
 already boots.
