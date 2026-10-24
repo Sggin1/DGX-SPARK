@@ -2,7 +2,7 @@
 
 TurboQuant 3-bit KV cache compression for Nemotron-3-Nano-30B-A3B-NVFP4 on DGX Spark, patched into vLLM via [PR #38479](https://github.com/vllm-project/vllm/pull/38479).
 
-This is an early test of TurboQuant on SM121 hardware. The PR is unmerged and the results are from Triton fallback kernels (not the fused CUDA path). Numbers will likely improve as the PR matures.
+This is an early test of TurboQuant on SM121 hardware. The patch used here came from an unmerged PR at the time of testing (GitHub now lists PR #38479 as merged, checked 2026-10-24; the merged version may differ), and the results are from Triton fallback kernels (not the fused CUDA path). Numbers will likely improve as the PR matures.
 
 ## Results
 
@@ -179,7 +179,7 @@ See [`../nvfp4/`](../nvfp4/) (especially [`memory.md`](../nvfp4/memory.md)) for 
 
 ## Caveats
 
-- **Unmerged PR.** This patches vLLM with [PR #38479](https://github.com/vllm-project/vllm/pull/38479) which is open and under review. The API may change.
+- **Patch status.** This patches vLLM with [PR #38479](https://github.com/vllm-project/vllm/pull/38479) as it stood at the time of testing, when the PR was open and under review. GitHub now lists it as merged (checked 2026-10-24); the merged version may differ from the tested patch, and the API may have changed.
 - **Triton fallback only.** The PR includes fused CUDA kernels that aren't compiled for SM121 in this build. Throughput would improve with native kernels.
 - **Unofficial TurboQuant implementation.** Google has not released official code. The vLLM PR and `turboquant-torch` are community implementations based on the [paper](https://arxiv.org/abs/2504.19874).
 - **Tested on one model.** Nemotron-3-Nano-30B-A3B-NVFP4 only. Other models may behave differently.
