@@ -62,6 +62,8 @@ On unified-memory GB10, “GPU OOM” often looks like **host freezes**, swap th
 | `live` | interactive | live throttle alarm (same wedge rule as gate) |
 
 Example unit file: [`systemd/flightrec-memguard.service`](systemd/flightrec-memguard.service) (edit user/paths).  
+**Stopping the rest of a stack:** `--after-stop "<command>"` runs one shell command after a breach has stopped this host's containers (detached, cut off after 120 s, its result is not logged; the log only says `after-stop started`). Use it when a model spans hosts and stopping one rank leaves the others hung, e.g. `--after-stop "ssh head-host 'path/to/stack stop'"`. Empty by default: nothing extra happens.
+
 **Note:** on kill threshold, `mem_guard` can **SIGKILL** matching processes and `docker stop` non-`registry` containers — intentional for GB10 freeze recovery; review flags before enabling as a daemon.
 
 ---

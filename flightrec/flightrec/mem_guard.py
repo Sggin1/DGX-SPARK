@@ -93,7 +93,22 @@ def _stop_model_containers(log) -> None:
         print(f"  docker stop {cid} ({name.strip()})", file=log, flush=True)
 
 
-def enforce(kill_gb: float, log) -> bool:
+AFTER_STOP_LIMIT_S = 120  # the after-stop command is cut off after this long
+
+
+def _run_after_stop(command: str, log) -> None:
+    """Start the operator's after-stop command detached (never blocks the guard, never changes what it stopped)."""
+    if not command:
+        return
+    try:
+        subprocess.Popen(["timeout", str(AFTER_STOP_LIMIT_S), "sh", "-c", command], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        print(f"  after-stop started: {command[:90]}", file=log, flush=True)
+    except OSError as exc:
+        print(f"  after-stop failed to start: {exc}", file=log, flush=True)
+
+
+def enforce(kill_gb: float, log, after_stop: str = "") -> bool:
     """Kill model/compute targets if memory is below kill_gb. True if it acted."""
     avail = mem_available_gb()
     if avail >= kill_gb:
@@ -107,10 +122,11 @@ def enforce(kill_gb: float, log) -> bool:
         except OSError:
             pass
     _stop_model_containers(log)
+    _run_after_stop(after_stop, log)
     return True
 
 
-def run(kill_gb: float, warn_used_gb: float, interval: float, log_path: str) -> None:
+def run(kill_gb: float, warn_used_gb: float, interval: float, log_path: str, after_stop: str = "") -> None:
     """Poll memory; warn at a used-envelope, kill runaways below an avail floor.
 
     Two graded levels, by design:
@@ -127,6 +143,8 @@ def run(kill_gb: float, warn_used_gb: float, interval: float, log_path: str) -> 
             recorder's fast path — balloons move several GB/s, so a 1s poll
             races a freeze; 50ms catches a breach with tens of GB still free.
         log_path: file to append guard events to.
+        after_stop: shell command run once (detached, 120 s limit) after a breach has stopped the local containers,
+            e.g. to stop the rest of a multi-host stack. Empty: nothing extra.
     """
     total = mem_total_gb()
     with open(log_path, "a") as log:
@@ -139,7 +157,7 @@ def run(kill_gb: float, warn_used_gb: float, interval: float, log_path: str) -> 
             avail = mem_available_gb()
             used = total - avail
             if avail < kill_gb:
-                enforce(kill_gb, log)
+                enforce(kill_gb, log, after_stop)
                 time.sleep(3.0)  # cooldown: let teardown free memory before re-polling
             elif used > warn_used_gb and not warned:
                 print(f"[{time.strftime('%H:%M:%S')}] WARN used={used:.1f}GB "
@@ -161,8 +179,10 @@ def main() -> None:
     ap.add_argument("--interval", type=float, default=0.05,
                     help="poll seconds (default 0.05 = 20 Hz, matches recorder fast path)")
     ap.add_argument("--log", default="/tmp/flightrec_memguard.log")
+    ap.add_argument("--after-stop", default="",
+                    help="shell command run once after a breach has stopped the local containers (detached, 120 s limit)")
     a = ap.parse_args()
-    run(a.kill_gb, a.warn_used_gb, a.interval, a.log)
+    run(a.kill_gb, a.warn_used_gb, a.interval, a.log, a.after_stop)
 
 
 if __name__ == "__main__":
